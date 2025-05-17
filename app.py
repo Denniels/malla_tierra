@@ -6,17 +6,34 @@ from calc_avanzado import (
     calcular_resistencia_malla,
     factor_temperatura_suelo
 )
+from visualizacion import (
+    generar_mapa_calor,
+    generar_perfil_suelo,
+    generar_reporte_pdf,
+    calcular_potenciales_superficie
+)
 from graph import generate_malla_tierra
 from validations import ValidationError
-from malla import Conductor
+from malla import Conductor, MallaTierra
 import matplotlib.pyplot as plt
+import os
+from datetime import datetime
 
 def run_app():
     st.title("Calculadora de Malla de Puesta a Tierra")
     st.write("Diseño según norma IEEE-80")
     
     # Crear pestañas para organizar la interfaz
-    tab1, tab2, tab3 = st.tabs(["Parámetros Básicos", "Diseño Avanzado", "Análisis"])
+    tab1, tab2, tab3, tab4 = st.tabs([
+        "Parámetros Básicos",
+        "Diseño Avanzado",
+        "Análisis",
+        "Visualización y Reportes"
+    ])
+    
+    # Variables globales para el estado
+    if 'malla' not in st.session_state:
+        st.session_state.malla = None
     
     with tab1:
         # Columnas para parámetros
@@ -214,6 +231,28 @@ def run_app():
             )
 
     try:
+        # Crear objeto malla
+        malla = MallaTierra(
+            ancho=L if tipo_malla == "Cuadrada" else ancho,
+            largo=L if tipo_malla == "Cuadrada" else largo,
+            espaciamiento=spacing_value,
+            conductor=conductor,
+            profundidad=h
+        )
+        
+        if usar_varillas:
+            # Agregar varillas en las esquinas
+            for x in [0, malla.ancho]:
+                for y in [0, malla.largo]:
+                    malla.agregar_varilla(
+                        x=x,
+                        y=y,
+                        longitud=longitud_varilla,
+                        diametro=diametro_varilla
+                    )
+        
+        st.session_state.malla = malla
+        
         # Calcular los parámetros básicos de la malla
         I, R_des, sigma, resistividad, I_falla, L, A, n_barras = calc_malla_tierra(
             I=I,
@@ -293,6 +332,105 @@ def run_app():
         st.error(f"Error de validación: {str(e)}")
     except Exception as e:
         st.error(f"Error en el cálculo: {str(e)}")
+
+    with tab4:
+        st.subheader("Visualización Avanzada")
+        
+        vista = st.radio(
+            "Tipo de visualización",
+            ["Mapa de calor de potenciales", "Perfil del suelo", "Malla 3D"],
+            help="Seleccione el tipo de visualización"
+        )
+        
+        col7, col8 = st.columns(2)
+        with col7:
+            mostrar_varillas = st.checkbox(
+                "Mostrar varillas",
+                value=True,
+                help="Mostrar varillas verticales en la visualización"
+            )
+            
+        with col8:
+            mostrar_isolineas = st.checkbox(
+                "Mostrar isolíneas",
+                value=True,
+                help="Mostrar líneas de igual potencial"
+            )
+        
+        # Botón para generar reporte PDF
+        if st.button("Generar Reporte PDF"):
+            try:
+                # Preparar datos para el reporte
+                parametros = {
+                    "Corriente de falla": f"{I_falla} A",
+                    "Resistividad del suelo": f"{resistividad} Ω⋅m",
+                    "Dimensiones": f"{malla.ancho}m x {malla.largo}m",
+                    "Profundidad": f"{h} m",
+                    "Material conductor": conductor.material
+                }
+                
+                resultados = {
+                    "Potencial de paso": f"{E_paso:.2f} V",
+                    "Potencial de contacto": f"{E_contacto:.2f} V",
+                    "Resistencia de malla": f"{R_malla:.3f} Ω",
+                    "Número de nodos": f"{n_barras * n_barras}"
+                }
+                
+                # Generar y guardar reporte
+                nombre_archivo = f"reporte_malla_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+                ruta_pdf = generar_reporte_pdf(
+                    st.session_state.malla,
+                    parametros,
+                    resultados,
+                    nombre_archivo
+                )
+                
+                with open(ruta_pdf, "rb") as pdf_file:
+                    st.download_button(
+                        label="Descargar Reporte PDF",
+                        data=pdf_file,
+                        file_name=nombre_archivo,
+                        mime="application/pdf"
+                    )
+            except Exception as e:
+                st.error(f"Error al generar el reporte: {e}")
+            
+        try:
+            # Actualizar visualizaciones según la selección
+            if vista == "Mapa de calor de potenciales" and st.session_state.malla:
+                potenciales = calcular_potenciales_superficie(
+                    st.session_state.malla,
+                    I_falla,
+                    resistividad
+                )
+                fig, ax = generar_mapa_calor(
+                    I_falla,
+                    resistividad,
+                    st.session_state.malla,
+                    potenciales
+                )
+                st.pyplot(fig)
+                
+            elif vista == "Perfil del suelo" and st.session_state.malla:
+                fig, ax = generar_perfil_suelo(
+                    st.session_state.malla,
+                    resistividad,
+                    h,
+                    rho_s
+                )
+                st.pyplot(fig)
+                
+            else:  # Malla 3D
+                fig, ax = generate_malla_tierra(
+                    I, R_des, sigma, resistividad,
+                    I_falla, L, A, n_barras
+                )
+                st.pyplot(fig)
+                
+        except ValidationError as e:
+            st.error(f"Error de validación: {str(e)}")
+        except Exception as e:
+            st.error(f"Error en el cálculo: {str(e)}")
 
 if __name__ == "__main__":
     run_app()

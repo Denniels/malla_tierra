@@ -26,11 +26,11 @@
 - [ ] Manejo de obstáculos
 
 ## 4. Visualización y Reportes (Media Prioridad)
-- [ ] Mapa de calor de distribución de potenciales
-- [ ] Gráficos de contorno para voltajes de paso
-- [ ] Generación de reportes PDF
-- [ ] Vista de perfil del suelo
-- [ ] Diagramas de isolíneas
+- [x] Mapa de calor de distribución de potenciales
+- [x] Gráficos de contorno para voltajes de paso
+- [x] Generación de reportes PDF
+- [x] Vista de perfil del suelo
+- [x] Diagramas de isolíneas
 
 ## 5. Análisis Avanzado (Media-Baja Prioridad)
 - [ ] Soporte para suelos multicapa
