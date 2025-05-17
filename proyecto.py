@@ -8,7 +8,7 @@ from historial import HistorialDiseños, VersionMalla
 class ProyectoMallaTierra:
     """Clase para manejar el guardado y carga de proyectos de malla de tierra"""
     
-    def __init__(self, nombre: str, descripcion: str = ""):
+    def __init__(self, nombre: str, descripcion: str = "", ruta_historial: str = "reportes"):
         self.nombre = nombre
         self.descripcion = descripcion
         self.fecha_creacion = datetime.now()
@@ -16,9 +16,9 @@ class ProyectoMallaTierra:
         self.parametros: Dict[str, Any] = {}
         self.resultados: Dict[str, Any] = {}
         self.configuracion: Dict[str, Any] = {}
-        self._historial = HistorialDiseños()
+        self._historial = HistorialDiseños(ruta_historial)
         self.version_actual: Optional[VersionMalla] = None
-    
+
     def guardar(self, ruta: str) -> str:
         """Guarda el proyecto en formato JSON"""
         self.fecha_modificacion = datetime.now()
@@ -41,12 +41,12 @@ class ProyectoMallaTierra:
         return ruta
     
     @classmethod
-    def cargar(cls, ruta: str) -> 'ProyectoMallaTierra':
+    def cargar(cls, ruta: str, ruta_historial: str = "reportes") -> 'ProyectoMallaTierra':
         """Carga un proyecto desde un archivo JSON"""
         with open(ruta, 'r', encoding='utf-8') as f:
             datos = json.load(f)
         
-        proyecto = cls(datos["nombre"], datos["descripcion"])
+        proyecto = cls(datos["nombre"], datos["descripcion"], ruta_historial)
         proyecto.fecha_creacion = datetime.fromisoformat(datos["fecha_creacion"])
         proyecto.fecha_modificacion = datetime.fromisoformat(datos["fecha_modificacion"])
         proyecto.parametros = datos["parametros"]
@@ -55,25 +55,19 @@ class ProyectoMallaTierra:
         
         return proyecto
     
-    def actualizar_parametros(self, **kwargs):
-        """Actualiza los parámetros del proyecto"""
-        self.parametros.update(kwargs)
-        self.fecha_modificacion = datetime.now()
-    
-    def actualizar_resultados(self, **kwargs):
-        """Actualiza los resultados del proyecto"""
-        self.resultados.update(kwargs)
-        self.fecha_modificacion = datetime.now()
-    
     def guardar_version(self, descripcion: str) -> VersionMalla:
         """Guarda una nueva versión del diseño actual"""
+        # Crear una copia del estado actual
         version = self._historial.guardar_version(
             proyecto_id=self.nombre,
             descripcion=descripcion,
-            parametros=self.parametros,
-            resultados=self.resultados
+            parametros=self.parametros.copy(),
+            resultados=self.resultados.copy() if self.resultados else None
         )
+
+        # Actualizar estado interno
         self.version_actual = version
+        self.fecha_modificacion = datetime.now()
         return version
     
     def obtener_versiones(self) -> List[VersionMalla]:
@@ -83,18 +77,48 @@ class ProyectoMallaTierra:
     def cargar_version(self, version_id: str) -> bool:
         """Carga una versión específica del proyecto"""
         version = self._historial.obtener_version(self.nombre, version_id)
-        if version:
-            self.parametros = version.parametros.copy()
-            if version.resultados:
-                self.resultados = version.resultados.copy()
-            self.version_actual = version
-            self.fecha_modificacion = datetime.now()
-            return True
-        return False
+        if not version:
+            return False
+
+        # Actualizar el estado del proyecto con la versión cargada
+        self.parametros = version.parametros.copy()
+        if version.resultados:
+            self.resultados = version.resultados.copy()
+        self.fecha_modificacion = datetime.now()
+        self.version_actual = version
+        return True
+    
+    def actualizar_parametros(self, **kwargs):
+        """Actualiza los parámetros del proyecto"""
+        # Guardar los cambios
+        self.parametros.update(kwargs)
+        self.fecha_modificacion = datetime.now()
+        # Limpiar la versión actual ya que hemos modificado los parámetros
+        self.version_actual = None
+
+    def actualizar_resultados(self, **kwargs):
+        """Actualiza los resultados del proyecto"""
+        # Guardar los cambios
+        self.resultados.update(kwargs)
+        self.fecha_modificacion = datetime.now()
+        # Limpiar la versión actual ya que hemos modificado los resultados
+        self.version_actual = None
     
     def comparar_con_version(self, version_id: str) -> Dict:
-        """Compara la versión actual con una versión específica"""
-        version = self._historial.obtener_version(self.nombre, version_id)
-        if version and self.version_actual:
-            return self._historial.comparar_versiones(version, self.version_actual)
-        return {}
+        """Compara una versión específica con la versión actual"""
+        version_objetivo = self._historial.obtener_version(self.nombre, version_id)
+        if not version_objetivo:
+            return {
+                'parametros': {},
+                'resultados': {}
+            }        # Crear una versión actual temporal para la comparación
+        estado_actual = VersionMalla(
+            id=datetime.now().strftime("%Y%m%d_%H%M%S_%f"),
+            fecha=datetime.now(),
+            descripcion="Estado actual",
+            parametros=self.parametros.copy(),
+            resultados=self.resultados.copy() if self.resultados else None
+        )
+        
+        # Comparar las versiones - la versión actual es la que está cargada en el proyecto
+        return self._historial.comparar_versiones(estado_actual, version_objetivo)
