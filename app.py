@@ -16,6 +16,7 @@ from visualizacion import (
     generar_mapa_calor,
     generar_perfil_suelo,
     generar_reporte_pdf,
+    generar_reporte_markdown,
     calcular_potenciales_superficie
 )
 from graph import generate_malla_tierra
@@ -26,24 +27,49 @@ import os
 from datetime import datetime
 
 def run_app():
+    st.set_page_config(layout="wide")
     st.title("Calculadora de Malla de Puesta a Tierra")
     st.write("Diseño según norma IEEE-80")
+    
+    # Barra lateral para documentación y ayuda
+    with st.sidebar:
+        st.header("Documentación")
+        with st.expander("Rangos Recomendados"):
+            st.write("""
+            - Área: 4-10000 m²
+            - Espaciamiento: 0.5-10 m
+            - Profundidad: 0.3-3.0 m
+            - Resistividad: 1-5000 Ω⋅m
+            - Corriente de falla: 1-50 kA
+            """)
+        
+        with st.expander("Recomendaciones"):
+            st.write("""
+            ### Por tipo de suelo:
+            - <100 Ω⋅m: Malla simple
+            - 100-500 Ω⋅m: Agregar varillas
+            - >500 Ω⋅m: Tratamiento químico
+            
+            ### Por corriente de falla:
+            - <5 kA: Malla básica
+            - 5-15 kA: Varillas en esquinas
+            - >15 kA: Menor espaciamiento
+            """)
     
     # Crear pestañas para organizar la interfaz
     tab1, tab2, tab3, tab4, tab5 = st.tabs([
         "Parámetros Básicos",
-        "Diseño Avanzado",
-        "Análisis",
+        "Diseño de Malla",
+        "Configuración de Capas",
         "Visualización y Reportes",
         "Análisis Avanzado"
     ])
     
-    # Variables globales para el estado
+    # Variables de estado
     if 'malla' not in st.session_state:
         st.session_state.malla = None
     
     with tab1:
-        # Columnas para parámetros
         col1, col2 = st.columns(2)
         
         with col1:
@@ -56,168 +82,35 @@ def run_app():
                 help="Corriente nominal del sistema"
             )
             
-            R_des = st.number_input(
-                "Resistencia deseada por barra (Ω/km)", 
-                min_value=0.1, 
-                value=0.5, 
-                step=0.1,
-                help="Resistencia máxima deseada para cada barra de la malla"
-            )
-            
-            sigma = st.number_input(
-                "Conductividad del suelo (S/m)", 
-                min_value=1e-4, 
-                value=0.01, 
-                step=1e-3,
-                help="Conductividad del terreno. Valores típicos: 0.001-0.1 S/m"
-            )
-            
-            # Calcular resistividad del suelo
-            resistividad = 1/sigma
-            if resistividad > 1000:
-                st.warning("⚠️ Resistividad muy alta (>1000 Ω⋅m). Considere tratamiento del suelo.")
-            
-            # Densidad del material (antes estaba mal etiquetado)
-            densidad = st.number_input(
-                "Densidad del material conductor (kg/m³)", 
-                min_value=1000, 
-                value=7800, 
-                step=100,
-                help="Densidad del material conductor. Cobre: ~8960, Acero: ~7800"
-            )
-            
             I_falla = st.number_input(
                 "Intensidad de corriente de falla (A)", 
-                min_value=0.1, 
+                min_value=100.0, 
                 value=1000.0, 
-                step=0.1,
+                step=100.0,
                 help="Corriente máxima de falla esperada"
             )
             
-            if I_falla > 10000:
-                st.warning("⚠️ Corriente de falla muy alta. Verifique protecciones.")
-        
-        with col2:
-            st.subheader("Parámetros Físicos")
-            L = st.number_input(
-                "Longitud total de la malla (m)", 
-                min_value=0.5, 
-                value=2.0, 
-                step=0.5,
-                help="Para una malla cuadrada, este es el largo de un lado"
-            )
-            
-            spacing_options = {
-                "0.25 m (Densidad Alta)": 0.25,
-                "0.5 m (Densidad Media)": 0.5,
-                "1.0 m (Densidad Baja)": 1.0
-            }
-            spacing = st.selectbox(
-                "Espaciamiento entre nodos",
-                options=list(spacing_options.keys()),
-                index=1,
-                help="Distancia entre nodos consecutivos de la malla"
-            )
-            spacing_value = spacing_options[spacing]
-            
-            h = st.number_input(
-                "Profundidad de enterramiento (m)",
-                min_value=0.5,
-                max_value=2.5,
-                value=0.5,
-                step=0.1,
-                help="Profundidad a la que se enterrará la malla (IEEE-80: 0.5m - 2.5m)"
-            )
-
-    with tab2:
-        st.subheader("Configuración de la Malla")
-        col3, col4 = st.columns(2)
-        
-        with col3:
-            tipo_malla = st.radio(
-                "Tipo de malla",
-                ["Cuadrada", "Rectangular"],
-                index=0,
-                help="Seleccione la forma de la malla"
-            )
-            
-            if tipo_malla == "Rectangular":
-                ancho = st.number_input(
-                    "Ancho de la malla (m)",
-                    min_value=0.5,
-                    value=2.0,
-                    step=0.5
-                )
-                largo = st.number_input(
-                    "Largo de la malla (m)",
-                    min_value=0.5,
-                    value=3.0,
-                    step=0.5
-                )
-            else:
-                ancho = largo = L
-            
-            material_conductor = st.selectbox(
-                "Material del conductor",
-                ["Cobre", "Acero Galvanizado"],
-                help="Material del conductor de la malla"
-            )
-            
-            diametro_conductor = st.number_input(
-                "Diámetro del conductor (mm)",
-                min_value=8.0,
-                max_value=50.0,
-                value=10.0,
-                step=0.5
-            )
-            
-        with col4:
-            usar_varillas = st.checkbox(
-                "Usar varillas verticales",
-                help="Añadir varillas de tierra verticales"
-            )
-            
-            if usar_varillas:
-                n_varillas = st.number_input(
-                    "Número de varillas",
-                    min_value=1,
-                    max_value=20,
-                    value=4
-                )
-                
-                longitud_varilla = st.number_input(
-                    "Longitud de varillas (m)",
-                    min_value=1.0,
-                    max_value=6.0,
-                    value=2.4,
-                    step=0.1
-                )
-                
-                diametro_varilla = st.number_input(
-                    "Diámetro de varillas (mm)",
-                    min_value=12.7,
-                    max_value=25.4,
-                    value=16.0,
-                    step=0.1
-                )
-        
-        # Crear conductor según selección
-        if material_conductor == "Cobre":
-            conductor = Conductor.get_conductor_cobre(diametro_conductor)
-        else:
-            conductor = Conductor.get_conductor_acero(diametro_conductor)
-            
-    with tab3:
-        st.subheader("Parámetros Avanzados")
-        col5, col6 = st.columns(2)
-        
-        with col5:
             t_c = st.number_input(
                 "Tiempo de despeje de falla (s)",
                 min_value=0.03,
                 max_value=3.0,
                 value=0.5,
-                step=0.01
+                step=0.01,
+                help="Tiempo de actuación de las protecciones"
+            )
+            
+            if I_falla > 15000:
+                st.warning("⚠️ Corriente de falla alta (>15kA). Se recomienda menor espaciamiento.")
+        
+        with col2:
+            st.subheader("Parámetros del Suelo")
+            resistividad = st.number_input(
+                "Resistividad del suelo (Ω⋅m)", 
+                min_value=1.0,
+                max_value=5000.0,
+                value=100.0,
+                step=10.0,
+                help="Resistividad del terreno natural"
             )
             
             rho_s = st.number_input(
@@ -225,359 +118,561 @@ def run_app():
                 min_value=100.0,
                 max_value=10000.0,
                 value=3000.0,
-                step=100.0
+                step=100.0,
+                help="Resistividad del material superficial (grava)"
             )
             
-        with col6:
             T_suelo = st.number_input(
                 "Temperatura del suelo (°C)",
                 min_value=-20.0,
                 max_value=50.0,
                 value=25.0,
-                step=1.0
+                step=1.0,
+                help="Temperatura del suelo a profundidad de la malla"
             )
-
-    try:
-        # Crear objeto malla
-        malla = MallaTierra(
-            ancho=L if tipo_malla == "Cuadrada" else ancho,
-            largo=L if tipo_malla == "Cuadrada" else largo,
-            espaciamiento=spacing_value,
-            conductor=conductor,
-            profundidad=h
-        )
-        
-        if usar_varillas:
-            # Agregar varillas en las esquinas
-            for x in [0, malla.ancho]:
-                for y in [0, malla.largo]:
-                    malla.agregar_varilla(
-                        x=x,
-                        y=y,
-                        longitud=longitud_varilla,
-                        diametro=diametro_varilla
-                    )
-        
-        st.session_state.malla = malla
-        
-        # Calcular los parámetros básicos de la malla
-        I, R_des, sigma, resistividad, I_falla, L, A, n_barras = calc_malla_tierra(
-            I=I,
-            R_des=R_des,
-            sigma=sigma,
-            rho=resistividad,
-            I_falla=I_falla,
-            L=L if tipo_malla == "Cuadrada" else max(ancho, largo),
-            spacing=spacing_value,
-            h=h,
-            conductor=conductor
-        )
-        
-        # Calcular parámetros avanzados
-        f_temp = factor_temperatura_suelo(T_suelo)
-        resistividad_corregida = resistividad * f_temp
-        
-        E_paso, E_paso_max = calcular_potencial_paso(
-            I_falla, resistividad_corregida, L, n_barras, h, t_c, rho_s
-        )
-        
-        E_contacto, E_contacto_max = calcular_potencial_contacto(
-            I_falla, resistividad_corregida, L, n_barras, h, t_c, rho_s
-        )
-        
-        R_malla = calcular_resistencia_malla(
-            resistividad_corregida, L, n_barras, h, diametro_conductor/1000
-        )
-
-        # Mostrar información básica de la malla
-        st.info(f"""
-            ### Dimensiones de la malla:
-            - Lado: {L}m x {L}m
-            - Área total: {L*L}m²
-            - Nodos por lado: {n_barras}
-            - Total de nodos: {n_barras * n_barras}
-            - Espaciamiento real: {L/(n_barras-1):.3f}m
-            - Profundidad: {h}m
             
-            ### Parámetros eléctricos:
-            - Resistividad del suelo: {resistividad:.2f} Ω⋅m
-            - Resistividad corregida por temperatura: {resistividad_corregida:.2f} Ω⋅m
-            - Conductividad del suelo: {sigma:.3f} S/m
-            - Resistencia de la malla: {R_malla:.3f} Ω
-        """)
+            if resistividad > 500:
+                st.warning("⚠️ Resistividad alta. Considere tratamiento químico del suelo.")
+    
+    with tab2:
+        st.subheader("Diseño de la Malla")
+        col3, col4, col5 = st.columns(3)
         
-        # Mostrar resultados de seguridad
-        col5, col6 = st.columns(2)
+        with col3:
+            tipo_malla = st.radio(
+                "Tipo de malla",
+                ["Cuadrada", "Rectangular"],
+                help="Forma general de la malla"
+            )
+            
+            if tipo_malla == "Rectangular":
+                ancho = st.slider(
+                    "Ancho de la malla (m)",
+                    min_value=2.0,
+                    max_value=100.0,
+                    value=20.0,
+                    step=1.0,
+                    help="Ancho de la malla rectangular"
+                )
+                largo = st.slider(
+                    "Largo de la malla (m)",
+                    min_value=2.0,
+                    max_value=100.0,
+                    value=30.0,
+                    step=1.0,
+                    help="Largo de la malla rectangular"
+                )
+                if largo/ancho > 2:
+                    st.warning("⚠️ Relación largo/ancho >2:1. Considere una forma más cuadrada.")
+            else:
+                lado = st.slider(
+                    "Lado de la malla (m)",
+                    min_value=2.0,
+                    max_value=100.0,
+                    value=20.0,
+                    step=1.0,
+                    help="Longitud del lado de la malla cuadrada"
+                )
+                ancho = largo = lado
+        
+        with col4:
+            spacing = st.slider(
+                "Espaciamiento entre conductores (m)",
+                min_value=0.5,
+                max_value=10.0,
+                value=2.0,
+                step=0.5,
+                help="Distancia entre conductores paralelos"
+            )
+            
+            h = st.slider(
+                "Profundidad de enterramiento (m)",
+                min_value=0.3,
+                max_value=3.0,
+                value=0.5,
+                step=0.1,
+                help="Profundidad de la malla"
+            )
+            
+            if spacing > 3:
+                st.warning("⚠️ Espaciamiento grande. Mayor riesgo de potenciales peligrosos.")
+            
         with col5:
-            st.metric(
-                "Potencial de Paso",
-                f"{E_paso:.1f} V",
-                f"{E_paso_max - E_paso:.1f} V bajo límite",
-                delta_color="normal" if E_paso < E_paso_max else "off"
+            material_conductor = st.selectbox(
+                "Material del conductor",
+                ["Cobre", "Acero Galvanizado"],
+                help="Material de los conductores de la malla"
             )
-        with col6:
-            st.metric(
-                "Potencial de Contacto",
-                f"{E_contacto:.1f} V",
-                f"{E_contacto_max - E_contacto:.1f} V bajo límite",
-                delta_color="normal" if E_contacto < E_contacto_max else "off"
-            )
-        
-        if E_paso > E_paso_max or E_contacto > E_contacto_max:
-            st.warning("⚠️ Los potenciales de paso y/o contacto superan los límites seguros. Considere:")
-            st.write("- Aumentar el área de la malla")
-            st.write("- Reducir el espaciamiento entre conductores")
-            st.write("- Aumentar la profundidad de enterramiento")
-            st.write("- Mejorar la resistividad de la capa superficial")
-
-        # Botón para calcular y graficar
-        if st.button("Calcular y graficar"):
-            fig, ax = generate_malla_tierra(I, R_des, sigma, resistividad, I_falla, L, A, n_barras)
-            st.pyplot(fig)
             
-    except ValidationError as e:
-        st.error(f"Error de validación: {str(e)}")
-    except Exception as e:
-        st.error(f"Error en el cálculo: {str(e)}")
-
+            diametro_conductor = st.slider(
+                "Diámetro del conductor (mm)",
+                min_value=8.0,
+                max_value=50.0,
+                value=10.0,
+                step=0.5,
+                help="Diámetro del conductor principal"
+            )
+            
+            usar_varillas = st.checkbox(
+                "Usar varillas verticales",
+                value=True,
+                help="Incluir varillas de puesta a tierra"
+            )
+            
+            if usar_varillas:
+                n_varillas = st.number_input(
+                    "Número de varillas",
+                    min_value=4,
+                    max_value=36,
+                    value=4,
+                    step=4,
+                    help="Cantidad total de varillas"
+                )
+                
+                longitud_varilla = st.slider(
+                    "Longitud de varillas (m)",
+                    min_value=1.5,
+                    max_value=6.0,
+                    value=2.4,
+                    step=0.3,
+                    help="Longitud de cada varilla"
+                )
+                
+                diametro_varilla = st.slider(
+                    "Diámetro de varillas (mm)",
+                    min_value=12.7,
+                    max_value=25.4,
+                    value=16.0,
+                    step=0.1,
+                    help="Diámetro de las varillas"
+                )
+    
+    with tab3:
+        st.subheader("Configuración de Capas del Suelo")
+        col6, col7 = st.columns(2)
+        
+        with col6:
+            n_capas = st.number_input(
+                "Número de capas",
+                min_value=1,
+                max_value=4,
+                value=2,
+                help="Cantidad de capas del suelo"
+            )
+            
+            metodo_union = st.selectbox(
+                "Método de unión entre capas",
+                ["Soldadura exotérmica", "Conectores mecánicos", "Conectores certificados"],
+                help="Método de unión entre conductores y varillas"
+            )
+        
+        capas = []
+        for i in range(n_capas):
+            st.write(f"### Capa {i+1}")
+            col_a, col_b, col_c = st.columns(3)
+            
+            with col_a:
+                prof = st.slider(
+                    f"Profundidad capa {i+1} (m)",
+                    min_value=0.2 if i == 0 else capas[-1].profundidad + 0.2,
+                    max_value=5.0,
+                    value=float(i+1),
+                    step=0.2,
+                    help=f"Profundidad de la capa {i+1}"
+                )
+            
+            with col_b:
+                res = st.number_input(
+                    f"Resistividad capa {i+1} (Ω⋅m)",
+                    min_value=1.0,
+                    max_value=5000.0,
+                    value=100.0 * (i+1),
+                    step=10.0,
+                    help=f"Resistividad de la capa {i+1}"
+                )
+            
+            with col_c:
+                desc = st.text_input(
+                    f"Descripción capa {i+1}",
+                    value=f"Capa {i+1}",
+                    help=f"Descripción del material de la capa {i+1}"
+                )
+            
+            capas.append(CapaSuelo(prof, res, desc))
+            
+            if i > 0 and res < capas[i-1].resistividad * 0.5:
+                st.warning(f"⚠️ Gran diferencia de resistividad entre capas {i} y {i+1}")
+    
     with tab4:
-        st.subheader("Visualización Avanzada")
+        st.subheader("Visualización y Reportes")
         
-        vista = st.radio(
-            "Tipo de visualización",
-            ["Mapa de calor de potenciales", "Perfil del suelo", "Malla 3D"],
-            help="Seleccione el tipo de visualización"
-        )
+        # Crear pestañas para visualización y reporte
+        viz_tab, report_tab = st.tabs(["Visualizaciones", "Reporte Detallado"])
         
-        col7, col8 = st.columns(2)
-        with col7:
+        with viz_tab:
+            col8, col9 = st.columns(2)
+            
+            with col8:
+                vista = st.radio(
+                    "Tipo de visualización",
+                    ["Malla 3D", "Mapa de calor", "Perfil del suelo", "Potenciales"],
+                    help="Seleccione el tipo de visualización"
+                )
+            
             mostrar_varillas = st.checkbox(
                 "Mostrar varillas",
                 value=True,
-                help="Mostrar varillas verticales en la visualización"
+                help="Visualizar varillas en el modelo"
             )
             
-        with col8:
             mostrar_isolineas = st.checkbox(
                 "Mostrar isolíneas",
                 value=True,
                 help="Mostrar líneas de igual potencial"
             )
         
-        # Botón para generar reporte PDF
-        if st.button("Generar Reporte PDF"):
-            try:
-                # Preparar datos para el reporte
-                parametros = {
-                    "Corriente de falla": f"{I_falla} A",
-                    "Resistividad del suelo": f"{resistividad} Ω⋅m",
-                    "Dimensiones": f"{malla.ancho}m x {malla.largo}m",
-                    "Profundidad": f"{h} m",
-                    "Material conductor": conductor.material
-                }
-                
-                resultados = {
-                    "Potencial de paso": f"{E_paso:.2f} V",
-                    "Potencial de contacto": f"{E_contacto:.2f} V",
-                    "Resistencia de malla": f"{R_malla:.3f} Ω",
-                    "Número de nodos": f"{n_barras * n_barras}"
-                }
-                
-                # Generar y guardar reporte
-                nombre_archivo = f"reporte_malla_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
-                ruta_pdf = generar_reporte_pdf(
-                    st.session_state.malla,
-                    parametros,
-                    resultados,
-                    nombre_archivo
-                )
-                
-                with open(ruta_pdf, "rb") as pdf_file:
-                    st.download_button(
-                        label="Descargar Reporte PDF",
-                        data=pdf_file,
-                        file_name=nombre_archivo,
-                        mime="application/pdf"
-                    )
-            except Exception as e:
-                st.error(f"Error al generar el reporte: {e}")
-            
-        try:
-            # Actualizar visualizaciones según la selección
-            if vista == "Mapa de calor de potenciales" and st.session_state.malla:
-                potenciales = calcular_potenciales_superficie(
-                    st.session_state.malla,
-                    I_falla,
-                    resistividad
-                )
-                fig, ax = generar_mapa_calor(
-                    I_falla,
-                    resistividad,
-                    st.session_state.malla,
-                    potenciales
-                )
-                st.pyplot(fig)
-                
-            elif vista == "Perfil del suelo" and st.session_state.malla:
-                fig, ax = generar_perfil_suelo(
-                    st.session_state.malla,
-                    resistividad,
-                    h,
-                    rho_s
-                )
-                st.pyplot(fig)
-                
-            else:  # Malla 3D
-                fig, ax = generate_malla_tierra(
-                    I, R_des, sigma, resistividad,
-                    I_falla, L, A, n_barras
-                )
-                st.pyplot(fig)
-                
-        except ValidationError as e:
-            st.error(f"Error de validación: {str(e)}")
-        except Exception as e:
-            st.error(f"Error en el cálculo: {str(e)}")
-
-    with tab5:
-        st.subheader("Análisis Avanzado")
-        
-        analisis_type = st.radio(
-            "Tipo de análisis",
-            ["Suelo multicapa", "Análisis de costos", "Optimización automática"]
-        )
-        
-        if analisis_type == "Suelo multicapa":
-            st.write("Configuración de capas del suelo")
-            
-            n_capas = st.number_input(
-                "Número de capas",
-                min_value=1,
-                max_value=5,
-                value=2
+        with col9:
+            escala = st.select_slider(
+                "Escala de colores",
+                options=["Lineal", "Logarítmica"],
+                value="Lineal",
+                help="Escala para el mapa de colores"
             )
             
-            capas = []
-            for i in range(n_capas):
-                col1, col2 = st.columns(2)
-                with col1:
-                    prof = st.number_input(
-                        f"Profundidad capa {i+1} (m)",
-                        min_value=0.0 if i == 0 else capas[-1].profundidad + 0.1,
-                        value=float(i+1),
-                        step=0.1
-                    )
-                with col2:
-                    res = st.number_input(
-                        f"Resistividad capa {i+1} (Ω⋅m)",
-                        min_value=1.0,
-                        value=100.0 * (i+1),
-                        step=10.0
-                    )
-                capas.append(CapaSuelo(prof, res, f"Capa {i+1}"))
-            
-            suelo = SueloMulticapa(capas)
-            
-        elif analisis_type == "Análisis de costos":
-            st.write("Análisis económico de la malla")
-            
-            analisis = AnalisisCostos()
-            if st.session_state.malla:
-                costos_iniciales = analisis.calcular_costo_inicial(st.session_state.malla)
-                
-                st.write("Costos iniciales:")
-                for item, costo in costos_iniciales.items():
-                    st.write(f"- {item}: ${costo:.2f}")
-                
-                años = st.number_input(
-                    "Años de análisis",
-                    min_value=1,
-                    max_value=50,
-                    value=30
+            if vista == "Potenciales":
+                tipo_potencial = st.radio(
+                    "Tipo de potencial",
+                    ["Paso", "Contacto", "Ambos"]
                 )
-                
-                costos_totales = analisis.calcular_costo_vida_util(
-                    st.session_state.malla,
-                    años
-                )
-                
-                st.write("Costos totales (vida útil):")
-                for item, costo in costos_totales.items():
-                    st.write(f"- {item}: ${costo:.2f}")
-                
-                costo_total = sum(costos_totales.values())
-                st.info(f"Costo total en {años} años: ${costo_total:.2f}")
-                
-        else:  # Optimización automática
-            st.write("Optimización automática del diseño")
+    
+    with tab5:
+        st.subheader("Análisis Avanzado")
+        analisis_type = st.radio(
+            "Tipo de análisis",
+            ["Optimización automática", "Análisis económico", "Análisis de seguridad"]
+        )
+        
+        if analisis_type == "Optimización automática":
+            col10, col11 = st.columns(2)
             
-            col1, col2 = st.columns(2)
-            with col1:
+            with col10:
                 area_min = st.number_input(
                     "Área mínima (m²)",
-                    min_value=1.0,
-                    value=4.0
-                )
-                
-                I_falla_max = st.number_input(
-                    "Corriente de falla máxima (A)",
-                    min_value=100.0,
-                    value=1000.0
-                )
-                
-            with col2:
-                area_max = st.number_input(
-                    "Área máxima (m²)",
-                    min_value=area_min + 1,
-                    value=16.0
+                    min_value=4.0,
+                    value=100.0,
+                    help="Área mínima de la malla"
                 )
                 
                 R_max = st.number_input(
                     "Resistencia máxima (Ω)",
                     min_value=0.1,
-                    value=5.0
+                    value=5.0,
+                    help="Resistencia máxima permitida"
                 )
             
-            if st.button("Optimizar diseño"):
-                try:
-                    # Usar primera capa del suelo multicapa si está definido
-                    if 'suelo' in locals():
-                        optimizador = OptimizadorMalla(suelo, AnalisisCostos())
-                    else:
-                        # Crear suelo simple
-                        suelo_simple = SueloMulticapa([CapaSuelo(2.0, resistividad)])
-                        optimizador = OptimizadorMalla(suelo_simple, AnalisisCostos())
-                    
-                    restricciones = {
-                        'I_falla': I_falla_max,
-                        'R_max': R_max,
-                        't_c': 0.5
-                    }
-                    
-                    resultado = optimizador.optimizar_diseño(
-                        area_min,
-                        area_max,
-                        restricciones
+            with col11:
+                area_max = st.number_input(
+                    "Área máxima (m²)",
+                    min_value=area_min + 1,
+                    value=1000.0,
+                    help="Área máxima de la malla"
+                )
+                
+                factor_seg = st.slider(
+                    "Factor de seguridad",
+                    min_value=1.0,
+                    max_value=2.0,
+                    value=1.2,
+                    step=0.1,
+                    help="Factor de seguridad adicional"
+                )
+        
+        elif analisis_type == "Análisis económico":
+            años = st.slider(
+                "Período de análisis (años)",
+                min_value=10,
+                max_value=50,
+                value=30,
+                step=5,
+                help="Período para análisis económico"
+            )
+            
+            tasa_interes = st.slider(
+                "Tasa de interés anual (%)",
+                min_value=1.0,
+                max_value=15.0,
+                value=5.0,
+                step=0.5,
+                help="Tasa de interés para valor presente"
+            )
+            
+            incluir_mantenimiento = st.checkbox(
+                "Incluir costos de mantenimiento",
+                value=True,
+                help="Considerar costos de mantenimiento periódico"
+            )
+        
+        else:  # Análisis de seguridad
+            factor_temperatura = factor_temperatura_suelo(T_suelo)
+            st.write(f"Factor de corrección por temperatura: {factor_temperatura:.2f}")
+            
+            if st.session_state.malla:
+                E_paso, E_paso_max = calcular_potencial_paso(
+                    I_falla, resistividad, 
+                    ancho if tipo_malla == "Rectangular" else lado,
+                    int(ancho/spacing) + 1, h
+                )
+                
+                E_contacto, E_contacto_max = calcular_potencial_contacto(
+                    I_falla, resistividad,
+                    ancho if tipo_malla == "Rectangular" else lado,
+                    int(ancho/spacing) + 1, h
+                )
+                
+                # Métricas de seguridad
+                col12, col13 = st.columns(2)
+                with col12:
+                    st.metric(
+                        "Potencial de paso",
+                        f"{E_paso:.1f} V",
+                        f"{E_paso_max - E_paso:.1f} V bajo límite",
+                        delta_color="normal" if E_paso < E_paso_max else "off"
+                    )
+                
+                with col13:
+                    st.metric(
+                        "Potencial de contacto",
+                        f"{E_contacto:.1f} V",
+                        f"{E_contacto_max - E_contacto:.1f} V bajo límite",
+                        delta_color="normal" if E_contacto < E_contacto_max else "off"
                     )
                     
-                    if resultado:
-                        st.success("¡Diseño optimizado encontrado!")
-                        malla_opt = resultado['malla']
-                        st.write(f"""
-                        Características del diseño óptimo:
-                        - Dimensiones: {malla_opt.ancho}m x {malla_opt.largo}m
-                        - Espaciamiento: {malla_opt.espaciamiento_x:.2f}m
-                        - Profundidad: {malla_opt.profundidad}m
-                        - Costo total: ${resultado['costo']:.2f}
-                        """)
-                        
-                        # Actualizar malla actual
-                        st.session_state.malla = malla_opt
-                    else:
-                        st.error("No se encontró un diseño que cumpla con las restricciones")
-                        
+                if E_paso > E_paso_max * 0.8 or E_contacto > E_contacto_max * 0.8:
+                    st.warning("""
+                    ⚠️ Potenciales cercanos a límites máximos. Considere:
+                    - Reducir el espaciamiento entre conductores
+                    - Aumentar el área de la malla
+                    - Agregar más varillas
+                    - Mejorar la resistividad superficial
+                    """)
+
+    # Botones de acción principales
+    col_action1, col_action2 = st.columns(2)
+    
+    with col_action1:
+        if st.button("Calcular y Validar", use_container_width=True):
+            try:
+                # Crear conductor según selección
+                if material_conductor == "Cobre":
+                    conductor = Conductor.get_conductor_cobre(diametro_conductor)
+                else:
+                    conductor = Conductor.get_conductor_acero(diametro_conductor)
+                
+                # Crear malla
+                malla = MallaTierra(
+                    ancho=ancho,
+                    largo=largo,
+                    espaciamiento=spacing,
+                    conductor=conductor,
+                    profundidad=h
+                )
+                
+                if usar_varillas:
+                    # Distribuir varillas uniformemente
+                    dx = ancho / (int(n_varillas**0.5) - 1)
+                    dy = largo / (int(n_varillas**0.5) - 1)
+                    
+                    for i in range(int(n_varillas**0.5)):
+                        for j in range(int(n_varillas**0.5)):
+                            malla.agregar_varilla(
+                                x=i*dx,
+                                y=j*dy,
+                                longitud=longitud_varilla,
+                                diametro=diametro_varilla
+                            )
+                
+                st.session_state.malla = malla
+                
+                # Realizar cálculos básicos
+                I, R_des, sigma, rho, I_falla, L, A, n_barras = calc_malla_tierra(
+                    I=I,
+                    R_des=5.0,  # Resistencia máxima típica
+                    sigma=1/resistividad,
+                    rho=resistividad,
+                    I_falla=I_falla,
+                    L=ancho,
+                    spacing=spacing,
+                    h=h,
+                    conductor=conductor
+                )
+                
+                st.success("Cálculos realizados correctamente")
+            except ValidationError as e:
+                st.error(f"Error de validación: {str(e)}")
+            except Exception as e:
+                st.error(f"Error en el cálculo: {str(e)}")
+    
+    with col_action2:
+        if st.button("Generar Visualización", use_container_width=True):
+            if st.session_state.malla:
+                try:
+                    if vista == "Malla 3D":
+                        fig, ax = generate_malla_tierra(
+                            I, 5.0, 1/resistividad, resistividad,
+                            I_falla, ancho, ancho*largo, int(ancho/spacing) + 1
+                        )
+                        st.pyplot(fig)
+                    elif vista == "Mapa de calor":
+                        potenciales = calcular_potenciales_superficie(
+                            st.session_state.malla,
+                            I_falla,
+                            resistividad
+                        )
+                        fig, ax = generar_mapa_calor(
+                            I_falla,
+                            resistividad,
+                            st.session_state.malla,
+                            potenciales
+                        )
+                        st.pyplot(fig)
+                    elif vista == "Perfil del suelo":
+                        fig, ax = generar_perfil_suelo(
+                            st.session_state.malla,
+                            resistividad,
+                            h,
+                            rho_s
+                        )
+                        st.pyplot(fig)
                 except Exception as e:
-                    st.error(f"Error en la optimización: {str(e)}")
+                    st.error(f"Error en la visualización: {str(e)}")
+            else:
+                st.warning("Primero debe calcular la malla")
+    
+    with report_tab:
+        if st.session_state.malla:
+            try:
+                # Preparar datos para el reporte
+                parametros = {
+                    "Corriente de falla": f"{I_falla} A",
+                    "Resistividad del suelo": f"{resistividad} Ω⋅m",
+                    "Dimensiones": f"{ancho}m x {largo}m",
+                    "Profundidad": f"{h} m",
+                    "Material conductor": material_conductor,
+                    "Número de varillas": str(n_varillas) if usar_varillas else "No usa",
+                    "Método de unión": metodo_union
+                }
+                
+                E_paso, E_paso_max = calcular_potencial_paso(
+                    I_falla, resistividad, ancho, int(ancho/spacing) + 1, h
+                )
+                E_contacto, E_contacto_max = calcular_potencial_contacto(
+                    I_falla, resistividad, ancho, int(ancho/spacing) + 1, h
+                )
+                
+                resultados = {
+                    "Potencial de paso": f"{E_paso:.2f} V",
+                    "Potencial de contacto": f"{E_contacto:.2f} V",
+                    "Resistencia de malla": "Pendiente de calcular",
+                    "Factor de seguridad": f"{factor_seg:.1f}"
+                }
+
+                # Generar imágenes temporales
+                os.makedirs("reportes", exist_ok=True)
+                imagenes = {}
+                
+                # Mapa de calor
+                fig1, ax1 = generar_mapa_calor(
+                    I_falla,
+                    resistividad,
+                    st.session_state.malla,
+                    calcular_potenciales_superficie(
+                        st.session_state.malla,
+                        I_falla,
+                        resistividad
+                    )
+                )
+                temp_path1 = os.path.join("reportes", f"temp_mapa_calor_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png")
+                plt.savefig(temp_path1, format='png', dpi=300, bbox_inches='tight')
+                plt.close(fig1)
+                imagenes["Distribución de Potenciales"] = temp_path1
+
+                # Perfil del suelo
+                fig2, ax2 = generar_perfil_suelo(
+                    st.session_state.malla,
+                    resistividad,
+                    h,
+                    rho_s
+                )
+                temp_path2 = os.path.join("reportes", f"temp_perfil_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png")
+                plt.savefig(temp_path2, format='png', dpi=300, bbox_inches='tight')
+                plt.close(fig2)
+                imagenes["Perfil del Suelo"] = temp_path2
+
+                # Generar reporte markdown y mostrarlo
+                reporte_md = generar_reporte_markdown(
+                    st.session_state.malla,
+                    parametros,
+                    resultados,
+                    imagenes
+                )
+                
+                st.markdown(reporte_md)
+
+                # Generar nombre único para el reporte
+                fecha_hora = datetime.now().strftime('%Y%m%d_%H%M%S')
+                
+                # Botones de descarga
+                col_md, col_pdf = st.columns(2)
+                
+                with col_md:
+                    nombre_md = f"reporte_malla_{fecha_hora}.md"
+                    st.download_button(
+                        label="📝 Descargar Reporte MD",
+                        data=reporte_md,
+                        file_name=nombre_md,
+                        mime="text/markdown",
+                        use_container_width=True
+                    )
+
+                with col_pdf:
+                    nombre_pdf = f"reporte_malla_{fecha_hora}.pdf"
+                    try:
+                        ruta_pdf = generar_reporte_pdf(
+                            st.session_state.malla,
+                            parametros,
+                            resultados,
+                            nombre_pdf
+                        )
+                        
+                        if os.path.exists(ruta_pdf):
+                            with open(ruta_pdf, "rb") as pdf_file:
+                                st.download_button(
+                                    label="📄 Descargar Reporte PDF",
+                                    data=pdf_file.read(),
+                                    file_name=nombre_pdf,
+                                    mime="application/pdf",
+                                    use_container_width=True
+                                )
+                        else:
+                            st.error("Error: No se pudo generar el archivo PDF")
+                    except Exception as e:
+                        st.error(f"Error al generar el PDF: {str(e)}")
+
+                # Limpiar archivos temporales
+                try:
+                    for imagen in imagenes.values():
+                        if os.path.exists(imagen):
+                            os.remove(imagen)
+                except Exception:
+                    pass
+                        
+            except Exception as e:
+                st.error(f"Error al generar el reporte: {str(e)}")
+                import traceback
+                st.error(traceback.format_exc())
+        else:
+            st.warning("Primero debe calcular la malla")
+
 
 if __name__ == "__main__":
     run_app()

@@ -155,15 +155,62 @@ def generar_reporte_pdf(
         c.drawString(70, y, f"{key}: {value}")
     
     # Agregar gráficos
-    for fig, titulo in zip([generar_mapa_calor, generar_perfil_suelo], 
-                         ["Distribución de Potenciales", "Perfil del Suelo"]):
-        imgdata = io.BytesIO()
-        plt.savefig(imgdata, format='png')
-        imgdata.seek(0)
-        c.drawImage(imgdata, 50, y-300, width=500, height=300)
-        y -= 320
+    y -= 40
     
-    c.save()
+    # Generar y guardar gráficos temporales
+    temp_files = []
+    
+    try:
+        # Mapa de calor
+        fig1, ax1 = generar_mapa_calor(
+            resultados.get('I_falla', 1000),
+            parametros.get('resistividad', 100),
+            malla,
+            calcular_potenciales_superficie(
+                malla,
+                resultados.get('I_falla', 1000),
+                parametros.get('resistividad', 100)
+            )
+        )
+        temp_path1 = os.path.join("reportes", f"temp_mapa_calor_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png")
+        plt.savefig(temp_path1, format='png', dpi=300, bbox_inches='tight')
+        plt.close(fig1)
+        temp_files.append(temp_path1)
+        
+        # Perfil del suelo
+        fig2, ax2 = generar_perfil_suelo(
+            malla,
+            parametros.get('resistividad', 100),
+            parametros.get('profundidad', 0.5),
+            parametros.get('rho_s', 3000)
+        )
+        temp_path2 = os.path.join("reportes", f"temp_perfil_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png")
+        plt.savefig(temp_path2, format='png', dpi=300, bbox_inches='tight')
+        plt.close(fig2)
+        temp_files.append(temp_path2)
+        
+        # Agregar imágenes al PDF
+        c.drawString(50, y, "Distribución de Potenciales:")
+        y -= 320
+        c.drawImage(temp_path1, 50, y, width=500, height=300, preserveAspectRatio=True)
+        
+        y -= 40
+        c.drawString(50, y, "Perfil del Suelo:")
+        y -= 320
+        c.drawImage(temp_path2, 50, y, width=500, height=300, preserveAspectRatio=True)
+        
+        # Finalizar PDF
+        c.save()
+        
+    finally:
+        # Limpiar archivos temporales
+        for temp_file in temp_files:
+            try:
+                if os.path.exists(temp_file):
+                    os.remove(temp_file)
+            except Exception:
+                pass
+    
     return ruta_pdf
 
 def calcular_potenciales_superficie(malla, I_falla: float, rho: float) -> np.ndarray:
@@ -218,3 +265,102 @@ def calcular_potencial_punto(x: float, y: float, malla, I_falla: float, rho: flo
         V += I_falla * rho * l / (4 * np.pi * r**2)
     
     return V
+
+def generar_reporte_markdown(
+    malla,
+    parametros: dict,
+    resultados: dict,
+    imagenes: dict = None
+) -> str:
+    """
+    Genera un reporte detallado en formato Markdown.
+    
+    Args:
+        malla: Objeto MallaTierra
+        parametros: Diccionario con parámetros de entrada
+        resultados: Diccionario con resultados calculados
+        imagenes: Diccionario con rutas a imágenes generadas
+    
+    Returns:
+        str: Contenido del reporte en formato Markdown
+    """
+    md = []
+    
+    # Título y fecha
+    md.append("# 📊 Reporte de Malla de Puesta a Tierra")
+    md.append(f"*Generado el: {datetime.now().strftime('%d/%m/%Y %H:%M')}*\n")
+    
+    # Resumen ejecutivo
+    md.append("## 📝 1. Resumen Ejecutivo")
+    md.append("Este reporte presenta el análisis detallado de una malla de puesta a tierra, ")
+    md.append("incluyendo sus características físicas, parámetros eléctricos y evaluación de seguridad.\n")
+    
+    # Parámetros de diseño
+    md.append("## 2. Parámetros de Diseño")
+    md.append("### 2.1 Dimensiones Físicas")
+    md.append(f"- **Tipo de malla**: {'Rectangular' if malla.ancho != malla.largo else 'Cuadrada'}")
+    md.append(f"- **Dimensiones**: {malla.ancho}m × {malla.largo}m")
+    md.append(f"- **Área total**: {malla.ancho * malla.largo:.2f} m²")
+    md.append(f"- **Profundidad**: {malla.profundidad} m")
+    md.append(f"- **Espaciamiento**: {malla.espaciamiento:.2f} m\n")
+    
+    md.append("### 2.2 Características del Conductor")
+    md.append(f"- **Material**: {malla.conductor.material}")
+    md.append(f"- **Diámetro**: {malla.conductor.diametro*1000:.1f} mm")
+    if hasattr(malla, 'varillas') and malla.varillas:
+        md.append(f"- **Número de varillas**: {len(malla.varillas)}")
+        md.append(f"- **Longitud de varillas**: {malla.varillas[0].longitud} m")
+    md.append("")
+    
+    # Parámetros eléctricos
+    md.append("## 3. Parámetros Eléctricos")
+    for key, value in parametros.items():
+        md.append(f"- **{key}**: {value}")
+    md.append("")
+    
+    # Resultados y análisis
+    md.append("## 4. Resultados del Análisis")
+    for key, value in resultados.items():
+        md.append(f"- **{key}**: {value}")
+    md.append("")
+    
+    # Evaluación de seguridad
+    md.append("## 5. Evaluación de Seguridad")
+    if 'Potencial de paso' in resultados and 'Potencial de contacto' in resultados:
+        paso = float(resultados['Potencial de paso'].split()[0])
+        contacto = float(resultados['Potencial de contacto'].split()[0])
+        paso_max = 2881.24  # Valores según IEEE-80
+        contacto_max = 843.35
+        
+        md.append("### 5.1 Potenciales de Seguridad")
+        md.append(f"- Potencial de paso: {paso:.2f}V (Máximo permitido: {paso_max}V)")
+        md.append(f"  - Estado: {'✅ SEGURO' if paso < paso_max else '⚠️ EXCEDE LÍMITE'}")
+        md.append(f"- Potencial de contacto: {contacto:.2f}V (Máximo permitido: {contacto_max}V)")
+        md.append(f"  - Estado: {'✅ SEGURO' if contacto < contacto_max else '⚠️ EXCEDE LÍMITE'}\n")
+    
+    # Recomendaciones
+    md.append("## 6. Recomendaciones")
+    if paso > paso_max * 0.8 or contacto > contacto_max * 0.8:
+        md.append("### Acciones recomendadas para mejorar la seguridad:")
+        if paso > paso_max * 0.8:
+            md.append("- Reducir el espaciamiento entre conductores")
+            md.append("- Considerar aumentar el área de la malla")
+        if contacto > contacto_max * 0.8:
+            md.append("- Agregar más varillas de puesta a tierra")
+            md.append("- Mejorar el tratamiento del suelo")
+    else:
+        md.append("✅ El diseño cumple con todos los criterios de seguridad.")
+        md.append("Se recomienda realizar mantenimiento preventivo periódico:")
+        md.append("- Inspección visual anual")
+        md.append("- Medición de resistencia cada 2 años")
+        md.append("- Verificación de conexiones cada 5 años")
+    md.append("")
+    
+    # Visualizaciones
+    md.append("## 7. Visualizaciones")
+    if imagenes:
+        for titulo, ruta in imagenes.items():
+            md.append(f"### {titulo}")
+            md.append(f"![{titulo}]({ruta})\n")
+    
+    return "\n".join(md)

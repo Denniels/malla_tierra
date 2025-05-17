@@ -34,10 +34,14 @@ def calc_malla_tierra(I, R_des, sigma, rho, I_falla, L, spacing=0.5, h=0.5, cond
     validate_fault_current(I_falla)
     validate_grid_spacing(spacing)
     
-    # Cálculos básicos
-    A = (I_falla * rho) / (R_des * sigma)
+    if L <= 0:
+        raise ValidationError("La longitud de la malla debe ser positiva")
     
-    # Crear malla cuadrada por defecto
+    if h < 0.3 or h > 3.0:
+        raise ValidationError("La profundidad de enterramiento debe estar entre 0.3 y 3.0 metros según IEEE-80")
+    
+    # Cálculos básicos
+    # Creamos la malla primero para tener las dimensiones reales
     malla = MallaTierra(
         ancho=L,
         largo=L,
@@ -46,4 +50,17 @@ def calc_malla_tierra(I, R_des, sigma, rho, I_falla, L, spacing=0.5, h=0.5, cond
         profundidad=h
     )
     
-    return I, R_des, sigma, rho, I_falla, L, A, malla.n_x
+    # El área efectiva es el área real de la malla más un margen de seguridad
+    # según IEEE-80 para considerar el área de disipación
+    A_real = malla.ancho * malla.largo
+    margen = 1.0  # 1 metro de margen según IEEE-80
+    A_efectiva = (malla.ancho + 2*margen) * (malla.largo + 2*margen)
+    
+    # La resistencia equivalente se calcula con el área efectiva
+    R_equiv = rho / (4 * np.sqrt(A_efectiva) + A_efectiva/h)
+    
+    # Validar que la resistencia equivalente cumpla con el criterio de diseño
+    if R_equiv > R_des:
+        raise ValidationError(f"La resistencia equivalente ({R_equiv:.2f} Ω) supera la resistencia deseada ({R_des} Ω)")
+    
+    return I, R_des, sigma, rho, I_falla, L, A_efectiva, malla.n_x

@@ -22,3 +22,19 @@ var/
 .venv
 venv/
 ENV/
+
+# IDE files
+.vscode/
+.idea/
+
+# Backup files
+*.bak
+
+# Generated files
+reportes/
+test_results/
+
+# Test cache
+.pytest_cache/
+.coverage
+htmlcov/

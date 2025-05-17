@@ -7,7 +7,7 @@ from math import pi, log, sqrt, exp
 
 def calcular_potencial_paso(I_falla, rho, L, n_barras, h, t_c=0.5, rho_s=3000):
     """
-    Calcula el potencial de paso según IEEE-80.
+    Calcula el potencial de paso según IEEE-80 2013.
     
     Args:
         I_falla (float): Corriente de falla (A)
@@ -21,23 +21,32 @@ def calcular_potencial_paso(I_falla, rho, L, n_barras, h, t_c=0.5, rho_s=3000):
     Returns:
         tuple: (E_paso, E_paso_max_permitido)
     """
+    if h <= 0:
+        raise ValueError("La profundidad de enterramiento debe ser positiva")
+    
+    if t_c <= 0:
+        raise ValueError("El tiempo de despeje de falla debe ser positivo")
+    
     # Factor de reducción de la capa superficial
     C_s = 1 - (0.09 * (1 - rho/rho_s))/(2 * h + 0.09)
     
-    # Factores de la malla
-    K_s = 1/(pi * (2*h + 1))
+    # Factores de la malla según IEEE-80 2013
+    D = L/(n_barras - 1)  # Espaciamiento entre conductores
+    n = 1  # Factor para mallas cuadradas
+    K_s = 1/(pi) * (1/(2*h) + 1/(D + 2*h) + 1/D * (1 - 0.5**(n-2)))
     
     # Voltaje de paso
-    E_paso = (rho * I_falla * K_s) / L
+    E_paso = (rho * I_falla * K_s) / (L * sqrt(1 + h/1))  # Factor de profundidad
     
-    # Voltaje de paso máximo permitido
-    E_paso_max = (1000 + 6 * C_s * rho_s) * (0.116/sqrt(t_c))
+    # Voltaje de paso máximo permitido según IEEE-80 2013
+    C_b = 1  # Factor de reducción para peso corporal de 70kg
+    E_paso_max = (1000 + 6 * C_s * rho_s) * (0.116/sqrt(t_c)) * C_b
     
     return E_paso, E_paso_max
 
 def calcular_potencial_contacto(I_falla, rho, L, n_barras, h, t_c=0.5, rho_s=3000):
     """
-    Calcula el potencial de contacto según IEEE-80.
+    Calcula el potencial de contacto según IEEE-80 2013.
     
     Args:
         I_falla (float): Corriente de falla (A)
@@ -50,23 +59,42 @@ def calcular_potencial_contacto(I_falla, rho, L, n_barras, h, t_c=0.5, rho_s=300
     
     Returns:
         tuple: (E_contacto, E_contacto_max_permitido)
-    """    # Factor de reducción de la capa superficial
+    """
+    if h <= 0:
+        raise ValueError("La profundidad de enterramiento debe ser positiva")
+    
+    if t_c <= 0:
+        raise ValueError("El tiempo de despeje de falla debe ser positivo")
+    
+    # Factor de reducción de la capa superficial
     C_s = 1 - (0.09 * (1 - rho/rho_s))/(2 * h + 0.09)
     
-    # Factores geométricos
+    # Factores geométricos según IEEE-80 2013
     D = L/(n_barras - 1)  # Espaciamiento entre conductores
     d = 0.01  # Diámetro del conductor (m)
-    K_h = sqrt(1 + h/1)
-    K_ii = 1
     
-    # Factores de la malla
-    K_m = 1/(2 * pi) * (log(D**2/(16*h*d) + 1) + K_ii/K_h * log(8/(pi*(2*n_barras-1))))
-    K_i = 0.644 + 0.148 * n_barras
+    # Factor de corrección por profundidad
+    K_h = sqrt(1 + h)
     
+    # Factor de irregularidad
+    K_ii = 0.644 + 0.148 * n_barras
+    
+    # Factor de geometría de la malla
+    K_m = 1/(2 * pi) * (
+        log(D**2/(16*h*d) + (D/4/h)**2 - 1) + 
+        K_ii/K_h * log(8/pi/(2*n_barras-1))
+    )
+    
+    # Factor de corrección por geometría
+    n = 1  # Factor para mallas cuadradas
+    K_i = 0.644 + 0.148 * n
+    
+    # Voltaje de contacto
     E_contacto = (rho * I_falla * K_m * K_i) / L
     
-    # Voltaje de contacto máximo permitido
-    E_contacto_max = (1000 + 1.5 * C_s * rho_s) * (0.116/sqrt(t_c))
+    # Voltaje de contacto máximo permitido según IEEE-80 2013
+    C_b = 1  # Factor de reducción para peso corporal de 70kg
+    E_contacto_max = (1000 + 1.5 * C_s * rho_s) * (0.116/sqrt(t_c)) * C_b
     
     return E_contacto, E_contacto_max
 
