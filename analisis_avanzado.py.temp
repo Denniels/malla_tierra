@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 """
 Módulo para análisis avanzado de mallas de tierra:
 - Suelos multicapa
@@ -15,26 +15,23 @@ from datetime import datetime, timedelta
 class CapaSuelo:
     """Representa una capa de suelo"""
     profundidad: float  # m
-    resistividad: float  # Ohm-m
+    resistividad: float  # Ω⋅m
     descripcion: str = ""
 
 class SueloMulticapa:
-    """Clase para modelar suelos con múltiples capas"""
-    
-    def __init__(self, capas: List[CapaSuelo]):
-        """Inicializa el modelo de suelo multicapa"""
+    """Clase para modelar suelos con múltiples capas"""    def __init__(self, capas: List[CapaSuelo]):
         self.capas = sorted(capas, key=lambda x: x.profundidad)
     
     def get_resistividad_aparente(self, profundidad: float) -> float:
         """
         Calcula la resistividad aparente a una profundidad dada
-        usando el método de Sunde mejorado para múltiples capas
+        usando el método de interpolación lineal mejorada entre capas
         
         Args:
             profundidad: Profundidad en metros donde se quiere calcular la resistividad
             
         Returns:
-            float: Resistividad aparente en Ohm-m
+            float: Resistividad aparente en Ω⋅m
         """
         if not self.capas:
             raise ValueError("No hay capas de suelo definidas")
@@ -58,22 +55,31 @@ class SueloMulticapa:
                 h1 = self.capas[i].profundidad
                 h2 = self.capas[i+1].profundidad
                 
-                # Factor de posición relativa en la capa
+                # Interpolación ponderada por la distancia relativa en la capa
+                # con factor de corrección para mejorar la precisión
                 alpha = (profundidad - h1) / (h2 - h1)
-                
-                # Factor de reflexión entre capas
-                k = (rho2 - rho1) / (rho2 + rho1)
-                
-                # Resistividad base por interpolación lineal
-                rho_base = rho1 * (1 - alpha) + rho2 * alpha
-                
-                # Factor de corrección de Sunde modificado
-                # Este factor considera el efecto de las capas adyacentes
-                beta = np.exp(-2 * np.pi * profundidad / (h2 - h1))
-                factor_correccion = 1 + k * beta * (1 - alpha)
-                
+                factor_correccion = 1 + 0.1 * np.sin(np.pi * factor)  # Ajuste sinusoidal
+                rho_base = rho1 * (1 - factor) + rho2 * factor
                 return rho_base * factor_correccion
+                h = self.capas[i].profundidad
+                
+                # Factor de reflexión
+                k = (rho2 - rho1)/(rho2 + rho1)
+                
+                # Método de Sunde mejorado para considerar el efecto de las capas superiores
+                sum_reflection = 0
+                for n in range(1, 4):  # Considerar hasta 3 reflexiones
+                    sum_reflection += k**n * np.exp(-2*n*profundidad/h)
+                
+                rho_aparente = rho1 * (1 + 2*sum_reflection)
+                
+                # Aplicar factor de corrección para profundidades mayores
+                factor_correccion = 1 + (profundidad - h)/(2*h)
+                rho_aparente *= factor_correccion
+                
+                return rho_aparente
         
+        # Si la profundidad es mayor que la última capa
         return self.capas[-1].resistividad
 
 @dataclass
@@ -125,7 +131,7 @@ class AnalisisCostos:
             ),
             "Tratamiento": MaterialCosto(
                 nombre="Tratamiento de suelo",
-                costo_unitario=5.0,  # USD/m
+                costo_unitario=5.0,  # USD/m³
                 vida_util=10,
                 tasa_degradacion=0.05,  # 5% anual
                 costo_mantenimiento=0.03,  # 3% anual
@@ -155,7 +161,84 @@ class AnalisisCostos:
         costos["Tratamiento"] = area_tratamiento * self.materiales["Tratamiento"].costo_unitario
         
         return costos
+    
+    def calcular_costo_vida_util(self, malla, años: int = 30, tasa_interes: float = 0.05) -> Dict[str, float]:
+        """
+        Calcula el costo total durante la vida útil considerando degradación y mantenimiento
         
+        Args:
+            malla: Objeto MallaTierra
+            años: Años de vida útil a considerar
+            tasa_interes: Tasa de interés anual para valor presente
+        
+        Returns:
+            Dict con costos anualizados y totales
+        """
+        costos_iniciales = self.calcular_costo_inicial(malla)
+        costos_totales = {
+            "Inicial": sum(costos_iniciales.values()),
+            "Mantenimiento": 0,
+            "Reposición": 0
+        }
+        
+        material = "Cobre" if malla.conductor.material == "Cobre" else "Acero"
+        
+        for año in range(1, años + 1):
+            # Factor de valor presente
+            vpf = 1 / (1 + tasa_interes)**año
+            
+            for componente, material_obj in self.materiales.items():
+                if componente not in costos_iniciales:
+                    continue
+                
+                # Costo de mantenimiento anual
+                costo_mant = (
+                    costos_iniciales[componente] * 
+                    material_obj.costo_mantenimiento * 
+                    material_obj.factor_ambiental
+                )
+                costos_totales["Mantenimiento"] += costo_mant * vpf
+                
+                # Costo de reposición si corresponde
+                if año % material_obj.vida_util == 0:
+                    degradacion = (1 + material_obj.tasa_degradacion)**material_obj.vida_util
+                    costo_repos = costos_iniciales[componente] * degradacion
+                    costos_totales["Reposición"] += costo_repos * vpf
+        
+        costos_totales["Total"] = sum(v for k, v in costos_totales.items() if k != "Total")
+        return costos_totales
+    
+    def optimizar_materiales(self, malla) -> Dict[str, str]:
+        """
+        Sugiere optimizaciones de materiales basadas en costos y condiciones
+        
+        Returns:
+            Dict con sugerencias de optimización
+        """
+        sugerencias = {}
+        costos = self.calcular_costo_vida_util(malla)
+        
+        # Analizar si conviene cambiar el material del conductor
+        material_actual = "Cobre" if malla.conductor.material == "Cobre" else "Acero"
+        material_alt = "Acero" if material_actual == "Cobre" else "Cobre"
+        
+        costo_actual = self.materiales[material_actual].costo_unitario
+        costo_alt = self.materiales[material_alt].costo_unitario
+        
+        if costo_alt * 0.8 < costo_actual:  # 20% más barato
+            sugerencias["conductor"] = f"Considerar cambiar a {material_alt}"
+            
+        # Analizar densidad de varillas
+        area = malla.ancho * malla.largo
+        densidad_varillas = len(malla.varillas) / area
+        
+        if densidad_varillas < 0.25:  # Menos de 1 varilla cada 4m²
+            sugerencias["varillas"] = "Considerar aumentar el número de varillas"
+        elif densidad_varillas > 1:  # Más de 1 varilla por m²
+            sugerencias["varillas"] = "Considerar reducir el número de varillas"
+            
+        return sugerencias
+
 class OptimizadorMalla:
     """Clase para optimización automática del diseño"""
     def __init__(self, suelo: SueloMulticapa, analisis_costos: AnalisisCostos):
@@ -173,39 +256,33 @@ class OptimizadorMalla:
         y minimizando costos
         """
         mejor_diseno = None
-        menor_costo = float("inf")
+        menor_costo = float('inf')
         
         # Grid search sobre parámetros de diseño
         for ancho in np.linspace(np.sqrt(area_min), np.sqrt(area_max), 10):
-            for espaciamiento in [1.0, 2.0, 3.0]:
-                for prof in np.linspace(0.5, 2.0, 4):
+            for espaciamiento in [0.25, 0.5, 1.0]:
+                for prof in np.linspace(0.5, 2.5, 5):
+                    # Crear diseño candidato
                     try:
-                        malla = self._crear_malla_candidata(
-                            ancho=ancho,
-                            espaciamiento=espaciamiento,
-                            profundidad=prof
-                        )
+                        malla = self._crear_malla_candidata(ancho, espaciamiento, prof)
                         
+                        # Verificar restricciones
                         if self._cumple_restricciones(malla, restricciones):
+                            # Calcular costo
                             costo = sum(self.analisis_costos.calcular_costo_inicial(malla).values())
                             
                             if costo < menor_costo:
                                 menor_costo = costo
                                 mejor_diseno = {
                                     "malla": malla,
-                                    "costo": costo,
-                                    "parametros": {
-                                        "ancho": ancho,
-                                        "espaciamiento": espaciamiento,
-                                        "profundidad": prof
-                                    }
+                                    "costo": costo
                                 }
-                    except Exception:
+                    except:
                         continue
         
         return mejor_diseno
     
-    def _crear_malla_candidata(self, ancho: float, espaciamiento: float, profundidad: float):
+    def _crear_malla_candidata(self, ancho, espaciamiento, profundidad):
         """Crea una malla candidata para optimización"""
         from malla import MallaTierra, Conductor
         return MallaTierra(
@@ -224,43 +301,42 @@ class OptimizadorMalla:
             calcular_resistencia_malla
         )
         
-        # Obtener resistividad aparente del suelo a la profundidad de la malla
-        rho = self.suelo.get_resistividad_aparente(malla.profundidad)
+        # Obtener parámetros eléctricos
+        I_falla = restricciones.get('I_falla', 1000)
+        t_c = restricciones.get('t_c', 0.5)
         
-        try:
-            # Verificar potencial de paso
-            E_paso, E_paso_max = calcular_potencial_paso(
-                restricciones.get("I_falla", 1000),
-                rho,
-                malla.ancho,
-                malla.n_x,
-                malla.profundidad
-            )
-            if E_paso > E_paso_max:
-                return False
-            
-            # Verificar potencial de contacto
-            E_contacto, E_contacto_max = calcular_potencial_contacto(
-                restricciones.get("I_falla", 1000),
-                rho,
-                malla.ancho,
-                malla.n_x,
-                malla.profundidad
-            )
-            if E_contacto > E_contacto_max:
-                return False
-            
-            # Verificar resistencia de malla
-            R_malla = calcular_resistencia_malla(
-                rho,
-                malla.ancho,
-                malla.n_x,
-                malla.profundidad
-            )
-            if R_malla > restricciones.get("R_max", 5):
-                return False
-            
-            return True
-            
-        except Exception:
+        # Calcular valores
+        E_paso, E_paso_max = calcular_potencial_paso(
+            I_falla,
+            self.suelo.get_resistividad_aparente(malla.profundidad),
+            malla.ancho,
+            malla.n_x,
+            malla.profundidad,
+            t_c
+        )
+        
+        E_contacto, E_contacto_max = calcular_potencial_contacto(
+            I_falla,
+            self.suelo.get_resistividad_aparente(malla.profundidad),
+            malla.ancho,
+            malla.n_x,
+            malla.profundidad,
+            t_c
+        )
+        
+        R_malla = calcular_resistencia_malla(
+            self.suelo.get_resistividad_aparente(malla.profundidad),
+            malla.ancho,
+            malla.n_x,
+            malla.profundidad
+        )
+        
+        # Verificar restricciones
+        if E_paso > E_paso_max:
             return False
+        if E_contacto > E_contacto_max:
+            return False
+        if R_malla > restricciones.get('R_max', 5):
+            return False
+            
+        return True

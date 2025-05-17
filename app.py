@@ -1,4 +1,7 @@
 import streamlit as st
+from unidades import UnidadesMallaTierra, SistemaUnidades
+from proyecto import ProyectoMallaTierra
+from presets import PRESETS_INSTALACIONES
 from calc import calc_malla_tierra
 from calc_avanzado import (
     calcular_potencial_paso,
@@ -26,11 +29,186 @@ import matplotlib.pyplot as plt
 import os
 from datetime import datetime
 
+def inicializar_sistema_unidades():
+    """Inicializa el sistema de unidades en el estado de la sesión"""
+    if 'sistema_unidades' not in st.session_state:
+        st.session_state.sistema_unidades = UnidadesMallaTierra()
+    if 'sistema_actual' not in st.session_state:
+        st.session_state.sistema_actual = SistemaUnidades.METRICO
+
+def convertir_valor(valor: float, tipo: str, desde: SistemaUnidades, hacia: SistemaUnidades) -> float:
+    """Convierte un valor entre sistemas de unidades"""
+    valor_convertido, _ = st.session_state.sistema_unidades.convertir(valor, tipo, desde, hacia)
+    return valor_convertido
+
+def cargar_estado_desde_proyecto(proyecto: ProyectoMallaTierra) -> None:
+    """Carga el estado de la aplicación desde un proyecto"""
+    if not proyecto:
+        return
+        
+    # Actualizar st.session_state con los valores del proyecto
+    for key, value in proyecto.parametros.items():
+        if key in st.session_state:
+            st.session_state[key] = value
+
+def guardar_estado_en_proyecto(proyecto: ProyectoMallaTierra) -> None:
+    """Guarda el estado actual de la aplicación en un proyecto"""
+    if not proyecto:
+        return
+        
+    # Guardar valores relevantes en el proyecto
+    proyecto.actualizar_parametros(
+        corriente=st.session_state.get('I', 100.0),
+        corriente_falla=st.session_state.get('I_falla', 1000.0),
+        tiempo_despeje=st.session_state.get('t_c', 0.5),
+        resistividad=st.session_state.get('resistividad', 100.0),
+        tipo_malla=st.session_state.get('tipo_malla', 'Cuadrada'),
+        ancho=st.session_state.get('ancho', 20.0),
+        largo=st.session_state.get('largo', 20.0),
+        spacing=st.session_state.get('spacing', 2.0),
+        profundidad=st.session_state.get('h', 0.5),
+        usar_varillas=st.session_state.get('usar_varillas', True),
+        n_varillas=st.session_state.get('n_varillas', 4)
+    )
+
+def obtener_parametros_unidad(tipo: str) -> dict:
+    """Obtiene los parámetros de unidad para un tipo de medida"""
+    unidades = st.session_state.sistema_unidades
+    sistema = st.session_state.sistema_actual
+    return {
+        "simbolo": unidades.obtener_simbolo(tipo),
+        "factor": unidades.obtener_factor(tipo)
+    }
+
 def run_app():
     st.set_page_config(layout="wide")
     st.title("Calculadora de Malla de Puesta a Tierra")
     st.write("Diseño según norma IEEE-80")
     
+    # Inicializar sistema de unidades y variables globales
+    inicializar_sistema_unidades()
+    if 'factor_seg' not in st.session_state:
+        st.session_state.factor_seg = 1.2
+    
+    # Inicializar el estado del proyecto
+    if 'proyecto_actual' not in st.session_state:
+        st.session_state.proyecto_actual = None
+        
+    # Variables de estado
+    if 'malla' not in st.session_state:
+        st.session_state.malla = None
+    
+    # Barra superior para archivo, presets y unidades
+    col_archivo, col_preset, col_unidades = st.columns([2, 2, 1])
+    
+    with col_archivo:
+        archivo_option = st.selectbox(
+            "Archivo",
+            ["Nuevo proyecto", "Cargar proyecto", "Guardar proyecto", "Guardar como..."]
+        )
+        
+        if archivo_option == "Nuevo proyecto":
+            if st.button("Crear nuevo proyecto"):
+                nombre = datetime.now().strftime("Proyecto_%Y%m%d_%H%M%S")
+                st.session_state.proyecto_actual = ProyectoMallaTierra(nombre)
+                st.success("Nuevo proyecto creado")
+        
+        elif archivo_option == "Cargar proyecto":
+            uploaded_file = st.file_uploader("Seleccionar archivo de proyecto", type="json")
+            if uploaded_file is not None:
+                try:
+                    # Guardar el archivo temporalmente
+                    temp_path = os.path.join("reportes", uploaded_file.name)
+                    with open(temp_path, "wb") as f:
+                        f.write(uploaded_file.getbuffer())
+                    
+                    # Cargar el proyecto
+                    proyecto = ProyectoMallaTierra.cargar(temp_path)
+                    st.session_state.proyecto_actual = proyecto
+                    cargar_estado_desde_proyecto(proyecto)
+                    st.success("Proyecto cargado correctamente")
+                    
+                    # Limpiar archivo temporal
+                    os.remove(temp_path)
+                except Exception as e:
+                    st.error(f"Error al cargar el proyecto: {str(e)}")
+        
+        elif archivo_option in ["Guardar proyecto", "Guardar como..."]:
+            if st.session_state.proyecto_actual:
+                nombre = st.text_input(
+                    "Nombre del proyecto",
+                    value=st.session_state.proyecto_actual.nombre
+                )
+                if st.button("Guardar"):
+                    try:
+                        guardar_estado_en_proyecto(st.session_state.proyecto_actual)
+                        ruta = os.path.join("reportes", f"{nombre}.json")
+                        st.session_state.proyecto_actual.guardar(ruta)
+                        
+                        # Ofrecer descarga del archivo
+                        with open(ruta, "rb") as f:
+                            st.download_button(
+                                "📥 Descargar archivo del proyecto",
+                                f,
+                                file_name=f"{nombre}.json",
+                                mime="application/json"
+                            )
+                    except Exception as e:
+                        st.error(f"Error al guardar el proyecto: {str(e)}")
+            else:
+                st.warning("Primero debe crear o cargar un proyecto")
+    
+    with col_preset:
+        st.subheader("Presets")
+        preset_seleccionado = st.selectbox(
+            "Cargar configuración predefinida",
+            ["Personalizado"] + list(PRESETS_INSTALACIONES.keys()),
+            help="Seleccione una configuración predefinida para el tipo de instalación"
+        )
+        
+        if preset_seleccionado != "Personalizado":
+            if st.button("Aplicar preset"):
+                preset = PRESETS_INSTALACIONES[preset_seleccionado]
+                st.session_state.update(preset["parametros"])
+                st.info(f"Preset aplicado: {preset['descripcion']}")
+    
+    with col_unidades:
+        sistema_anterior = st.session_state.sistema_actual
+        nuevo_sistema = st.selectbox(
+            "Sistema de unidades",
+            [sistema.value for sistema in SistemaUnidades],
+            index=list(SistemaUnidades).index(st.session_state.sistema_actual)
+        )
+        
+        # Convertir valores si cambió el sistema
+        if nuevo_sistema != sistema_anterior.value:
+            nuevo_sistema_enum = SistemaUnidades(nuevo_sistema)
+            if 'malla' in st.session_state and st.session_state.malla:
+                # Convertir dimensiones de la malla
+                st.session_state.malla.ancho = convertir_valor(
+                    st.session_state.malla.ancho,
+                    "longitud",
+                    sistema_anterior,
+                    nuevo_sistema_enum
+                )
+                st.session_state.malla.largo = convertir_valor(
+                    st.session_state.malla.largo,
+                    "longitud",
+                    sistema_anterior,
+                    nuevo_sistema_enum
+                )
+                st.session_state.malla.profundidad = convertir_valor(
+                    st.session_state.malla.profundidad,
+                    "longitud",
+                    sistema_anterior,
+                    nuevo_sistema_enum
+                )
+            st.session_state.sistema_actual = nuevo_sistema_enum
+            st.rerun()  # Recargar la interfaz con las nuevas unidades
+    
+    # Separador visual
+    st.markdown("---")
+
     # Barra lateral para documentación y ayuda
     with st.sidebar:
         st.header("Documentación")
@@ -64,10 +242,6 @@ def run_app():
         "Visualización y Reportes",
         "Análisis Avanzado"
     ])
-    
-    # Variables de estado
-    if 'malla' not in st.session_state:
-        st.session_state.malla = None
     
     with tab1:
         col1, col2 = st.columns(2)
@@ -145,47 +319,62 @@ def run_app():
                 help="Forma general de la malla"
             )
             
+            # Obtener unidades para dimensiones
+            unidad_longitud = st.session_state.sistema_unidades.obtener_simbolo("longitud")
+            factor_longitud = st.session_state.sistema_unidades.obtener_factor("longitud")
+            
+            # Inicializar variables
+            largo = ancho = 20.0/factor_longitud
+            
             if tipo_malla == "Rectangular":
                 ancho = st.slider(
-                    "Ancho de la malla (m)",
-                    min_value=2.0,
-                    max_value=100.0,
-                    value=20.0,
-                    step=1.0,
-                    help="Ancho de la malla rectangular"
+                    f"Ancho de la malla ({unidad_longitud})",
+                    min_value=2.0/factor_longitud,
+                    max_value=100.0/factor_longitud,
+                    value=20.0/factor_longitud,
+                    step=1.0/factor_longitud,
+                    help=f"Ancho de la malla rectangular en {unidad_longitud}"
                 )
                 largo = st.slider(
-                    "Largo de la malla (m)",
-                    min_value=2.0,
-                    max_value=100.0,
-                    value=30.0,
-                    step=1.0,
-                    help="Largo de la malla rectangular"
-                )
-                if largo/ancho > 2:
+                    f"Largo de la malla ({unidad_longitud})",
+                    min_value=2.0/factor_longitud,
+                    max_value=100.0/factor_longitud,
+                    value=30.0/factor_longitud,
+                    step=1.0/factor_longitud,
+                    help=f"Largo de la malla rectangular en {unidad_longitud}"
+            )
+            if largo/ancho > 2:
                     st.warning("⚠️ Relación largo/ancho >2:1. Considere una forma más cuadrada.")
             else:
                 lado = st.slider(
-                    "Lado de la malla (m)",
-                    min_value=2.0,
-                    max_value=100.0,
-                    value=20.0,
-                    step=1.0,
-                    help="Longitud del lado de la malla cuadrada"
+                    f"Lado de la malla ({unidad_longitud})",
+                    min_value=2.0/factor_longitud,
+                    max_value=100.0/factor_longitud,
+                    value=20.0/factor_longitud,
+                    step=1.0/factor_longitud,
+                    help=f"Longitud del lado de la malla cuadrada en {unidad_longitud}"
                 )
                 ancho = largo = lado
         
-        with col4:
-            spacing = st.slider(
-                "Espaciamiento entre conductores (m)",
-                min_value=0.5,
-                max_value=10.0,
-                value=2.0,
-                step=0.5,
+        with col4:            from unit_utils import obtener_parametros_campo
+        params = obtener_parametros_campo(
+                "Espaciamiento entre conductores",
+                "longitud",
+                2.0,  # valor base
+                0.5,  # min
+                10.0, # max
+                0.5   # paso
+            )
+        spacing = st.slider(
+                params["label"],
+                min_value=params["min_value"],
+                max_value=params["max_value"],
+                value=params["value"],
+                step=params["step"],
                 help="Distancia entre conductores paralelos"
             )
             
-            h = st.slider(
+        h = st.slider(
                 "Profundidad de enterramiento (m)",
                 min_value=0.3,
                 max_value=3.0,
@@ -194,7 +383,7 @@ def run_app():
                 help="Profundidad de la malla"
             )
             
-            if spacing > 3:
+        if spacing > 3:
                 st.warning("⚠️ Espaciamiento grande. Mayor riesgo de potenciales peligrosos.")
             
         with col5:
@@ -382,9 +571,10 @@ def run_app():
                     "Factor de seguridad",
                     min_value=1.0,
                     max_value=2.0,
-                    value=1.2,
+                    value=st.session_state.factor_seg,
                     step=0.1,
-                    help="Factor de seguridad adicional"
+                    help="Factor de seguridad adicional",
+                    key="factor_seg"  # Esto vinculará el slider directamente con session_state.factor_seg
                 )
         
         elif analisis_type == "Análisis económico":
@@ -573,7 +763,7 @@ def run_app():
                     "Potencial de paso": f"{E_paso:.2f} V",
                     "Potencial de contacto": f"{E_contacto:.2f} V",
                     "Resistencia de malla": "Pendiente de calcular",
-                    "Factor de seguridad": f"{factor_seg:.1f}"
+                    "Factor de seguridad": f"{st.session_state.factor_seg:.1f}"
                 }
 
                 # Generar imágenes temporales

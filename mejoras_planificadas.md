@@ -40,10 +40,10 @@
 - [x] Simulación de condiciones ambientales
 
 ## 6. Interfaz y Usabilidad (Media-Baja Prioridad)
-- [ ] Interfaz gráfica mejorada
-- [ ] Sistema de guardado/carga de proyectos
-- [ ] Presets para instalaciones comunes
-- [ ] Sistema de unidades configurable
+- [x] Interfaz gráfica mejorada
+- [x] Sistema de guardado/carga de proyectos
+- [x] Presets para instalaciones comunes
+- [x] Sistema de unidades configurable
 - [ ] Historial de diseños
 
 ## 7. Documentación y Ayuda (Baja Prioridad)
