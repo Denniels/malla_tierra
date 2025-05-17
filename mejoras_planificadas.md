@@ -1,22 +1,22 @@
 # Plan de Mejoras para la Aplicación de Malla de Tierra
 
 ## 1. Validaciones y Seguridad (Alta Prioridad)
-- [ ] Validaciones de rangos según IEEE-80
-  - [ ] Resistividad del suelo
-  - [ ] Corriente de falla
-  - [ ] Tiempo de despeje de falla
-  - [ ] Profundidad de enterramiento
-- [ ] Implementar advertencias para valores críticos
-- [ ] Validación de cumplimiento con normas eléctricas
-- [ ] Mensajes de error descriptivos
+- [x] Validaciones de rangos según IEEE-80
+  - [x] Resistividad del suelo
+  - [x] Corriente de falla
+  - [x] Tiempo de despeje de falla
+  - [x] Profundidad de enterramiento
+- [x] Implementar advertencias para valores críticos
+- [x] Validación de cumplimiento con normas eléctricas
+- [x] Mensajes de error descriptivos
 
 ## 2. Análisis y Cálculos (Alta Prioridad)
-- [ ] Cálculo de potencial de paso
-- [ ] Cálculo de potencial de contacto
-- [ ] Análisis de tensión de malla
-- [ ] Cálculo de resistencia real
-- [ ] Factor de temperatura del suelo
-- [ ] Análisis de profundidad de enterramiento
+- [x] Cálculo de potencial de paso
+- [x] Cálculo de potencial de contacto
+- [x] Análisis de tensión de malla
+- [x] Cálculo de resistencia real
+- [x] Factor de temperatura del suelo
+- [x] Análisis de profundidad de enterramiento
 
 ## 3. Flexibilidad en el Diseño (Media Prioridad)
 - [ ] Soporte para mallas rectangulares
