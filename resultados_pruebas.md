@@ -1,7 +1,7 @@
 # 📊 Resumen de Pruebas
 
 ## Estadísticas Generales
-- **Fecha de ejecución**: 2025-05-17 18:12:08
+- **Fecha de ejecución**: 2025-05-17 18:52:45
 - **Total de pruebas**: 6
 - **Tipos de pruebas**:
   - Validaciones básicas
@@ -36,7 +36,7 @@
 ---
 
 # Informe de Pruebas - Malla de Tierra
-Fecha: 2025-05-17 18:12:06
+Fecha: 2025-05-17 18:52:43
 
 ## 1. Pruebas de Validaciones Básicas
 ❌ Error en validaciones básicas: La resistencia equivalente (2.08 Ω) supera la resistencia deseada (0.5 Ω)
