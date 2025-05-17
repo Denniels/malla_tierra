@@ -57,86 +57,52 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 from scipy.spatial import Delaunay
 
-'''def generate_malla_tierra(I, R_des, sigma, rho, I_falla, L, A, n_barras):
-    # Coordenadas para las barras verticales y conectores horizontales
-    x_coords_vert = np.arange(0, L + 100 * n_barras, 100)[:-1]  # Agregué un valor adicional para incluir el final de la malla
-    y_coords_vert = -A * np.repeat(1, len(x_coords_vert))
-    z_coords_vert = A * np.repeat(1, len(x_coords_vert))
-
-    x_connectors = np.concatenate([x_coords_vert, x_coords_vert[-1] + np.array([100 * i for i in range(n_barras)])])
-    y_connectors = -A * np.concatenate([np.ones(len(x_coords_vert)), np.repeat(-2 * A, n_barras)])
-    z_connectors = A * np.concatenate([np.repeat(1, len(x_coords_vert)), np.arange(-n_barras + 1, n_barras)])
-
-    # Coordenadas para los nodos
-    x_nodes = np.concatenate([x_coords_vert, x_connectors])
-    y_nodes = -A * np.repeat(1, len(x_nodes))
-    z_nodes = A * np.repeat(1, len(x_nodes))
-
-    # Escalar las coordenadas para manejar mejor los datos con Qhull
-    scale_factor = 1.0 / (np.linalg.norm(np.column_stack((x_nodes, y_nodes, z_nodes)), axis=1).max() + 1e-6)
-    x_nodes_scaled = x_nodes * scale_factor
-    y_nodes_scaled = y_nodes * scale_factor
-    z_nodes_scaled = z_nodes * scale_factor
-
-    return x_nodes_scaled, y_nodes_scaled, z_nodes_scaled
-
-def plot_malla_tierra(I, R_des, sigma, rho, I_falla, L, A, n_barras):
-    fig = plt.figure()
-    ax = fig.add_subplot(111, projection='3d')
-
-    # Generar la malla
-    x_nodes, y_nodes, z_nodes = generate_malla_tierra(I, R_des, sigma, rho, I_falla, L, A, n_barras)
-
-    # Triangulación de Delaunay para los nodos
-    points = np.column_stack((x_nodes, y_nodes, z_nodes))
-    tri = Delaunay(points)
-    triangles = tri.simplices
-
-    # Graficar la superficie triangular de la malla
-    ax.plot_trisurf(x_nodes[triangles], y_nodes[triangles], z_nodes[triangles], color='gray', alpha=0.8, label='Malla de tierra')
-
-    # Configuración del gráfico
-    ax.set_xlabel('Distancia (m)')
-    ax.set_ylabel('Profundidad (m)')
-    ax.set_zlabel('Altitud (m)')
-    ax.set_title('Malla de tierra')
-    ax.legend()
-
-    return fig, ax'''
-    
-import numpy as np
-from scipy.spatial import Delaunay
-
-def generate_regular_grid(L, A, n_barras):
-    """
-    Genera una malla regular en 2D para la representación gráfica de la tierra.
-    """
-    # Coordenadas para las barras verticales y conectores horizontales
-    x_coords_vert = np.arange(0, L + 100 * n_barras, 100)[:-1]  # Agregué un valor adicional para incluir el final de la malla
-    y_coords_vert = -A * np.repeat(1, len(x_coords_vert))
-    z_coords_vert = A * np.repeat(1, len(x_coords_vert))
-
-    x_connectors = np.concatenate([x_coords_vert, x_coords_vert[-1] + np.array([100 * i for i in range(n_barras)])])
-    y_connectors = -A * np.concatenate([np.ones(len(x_coords_vert)), np.repeat(-2 * A, n_barras)])
-    z_connectors = A * np.concatenate([np.zeros(len(x_coords_vert)), 0.71 * np.ones(n_barras)])
-
-    # Coordenadas para los nodos de la malla
-    x_nodes = np.concatenate((x_coords_vert, x_connectors))
-    y_nodes = np.concatenate((y_coords_vert, y_connectors))
-    z_nodes = np.concatenate((z_coords_vert, z_connectors))
-
-    return x_nodes, y_nodes, z_nodes
-
 def generate_malla_tierra(I, R_des, sigma, rho, I_falla, L, A, n_barras):
     """
-    Genera la malla de tierra utilizando una triangulación de Delaunay.
+    Genera la malla de tierra y devuelve la figura con el gráfico.
     """
-    # Generar la malla
-    x_nodes, y_nodes, z_nodes = generate_regular_grid(L, A, n_barras)
-
-    # Triangulación de Delaunay para los nodos con opciones adicionales en Qhull
-    points = np.column_stack((x_nodes, y_nodes, z_nodes))
-    tri = Delaunay(points, qhull_options="QJ QR0")  # Agregué las opciones 'QJ' y 'QR0'
-    triangles = tri.simplices
-
-    return x_nodes, y_nodes, z_nodes, triangles
+    # Crear la figura
+    fig = plt.figure(figsize=(12, 8))
+    ax = fig.add_subplot(111, projection='3d')
+    
+    # Crear la cuadrícula de la malla
+    x = np.linspace(0, L, n_barras)  # Distribución uniforme de puntos
+    y = np.linspace(0, L, n_barras)
+    X, Y = np.meshgrid(x, y)
+    Z = np.zeros_like(X)  # La malla está en el plano z=0
+    
+    # Dibujar las líneas de la malla
+    for i in range(n_barras):
+        # Líneas horizontales
+        ax.plot(x, [y[i]]*len(x), np.zeros_like(x), 'b-', linewidth=2, 
+                label='Conductores' if i == 0 else None)
+        # Líneas verticales
+        ax.plot([x[i]]*len(y), y, np.zeros_like(y), 'b-', linewidth=2)
+    
+    # Dibujar los nodos (intersecciones)
+    ax.scatter(X.flatten(), Y.flatten(), Z.flatten(), 
+                c='red', marker='o', s=100, label='Nodos de conexión')
+    
+    # Agregar una superficie semitransparente para mejor visualización
+    ax.plot_surface(X, Y, Z, alpha=0.1, color='gray')
+    
+    # Configurar el gráfico
+    ax.set_xlabel('Distancia (m)')
+    ax.set_ylabel('Distancia (m)')
+    ax.set_zlabel('Profundidad (m)')
+    espaciamiento = L / (n_barras - 1) if n_barras > 1 else L
+    title = f'Malla de Puesta a Tierra\n{n_barras}x{n_barras} nodos, {espaciamiento:.2f}m entre nodos'
+    ax.set_title(title)
+    
+    # Ajustar límites y vista
+    margin = L * 0.1
+    ax.set_xlim(-margin, L + margin)
+    ax.set_ylim(-margin, L + margin)
+    ax.set_zlim(-margin, margin)
+    ax.view_init(elev=30, azim=45)
+    
+    # Agregar leyenda y grid
+    ax.legend(loc='upper right')
+    ax.grid(True)
+    
+    return fig, ax
