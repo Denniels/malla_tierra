@@ -33,11 +33,11 @@
 - [x] Diagramas de isolíneas
 
 ## 5. Análisis Avanzado (Media-Baja Prioridad)
-- [ ] Soporte para suelos multicapa
-- [ ] Análisis de costos de materiales
-- [ ] Optimización automática del diseño
-- [ ] Análisis de ciclo de vida
-- [ ] Simulación de condiciones ambientales
+- [x] Soporte para suelos multicapa
+- [x] Análisis de costos de materiales
+- [x] Optimización automática del diseño
+- [x] Análisis de ciclo de vida
+- [x] Simulación de condiciones ambientales
 
 ## 6. Interfaz y Usabilidad (Media-Baja Prioridad)
 - [ ] Interfaz gráfica mejorada

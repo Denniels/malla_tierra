@@ -6,6 +6,12 @@ from calc_avanzado import (
     calcular_resistencia_malla,
     factor_temperatura_suelo
 )
+from analisis_avanzado import (
+    CapaSuelo,
+    SueloMulticapa,
+    AnalisisCostos,
+    OptimizadorMalla
+)
 from visualizacion import (
     generar_mapa_calor,
     generar_perfil_suelo,
@@ -24,11 +30,12 @@ def run_app():
     st.write("Diseño según norma IEEE-80")
     
     # Crear pestañas para organizar la interfaz
-    tab1, tab2, tab3, tab4 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5 = st.tabs([
         "Parámetros Básicos",
         "Diseño Avanzado",
         "Análisis",
-        "Visualización y Reportes"
+        "Visualización y Reportes",
+        "Análisis Avanzado"
     ])
     
     # Variables globales para el estado
@@ -431,6 +438,146 @@ def run_app():
             st.error(f"Error de validación: {str(e)}")
         except Exception as e:
             st.error(f"Error en el cálculo: {str(e)}")
+
+    with tab5:
+        st.subheader("Análisis Avanzado")
+        
+        analisis_type = st.radio(
+            "Tipo de análisis",
+            ["Suelo multicapa", "Análisis de costos", "Optimización automática"]
+        )
+        
+        if analisis_type == "Suelo multicapa":
+            st.write("Configuración de capas del suelo")
+            
+            n_capas = st.number_input(
+                "Número de capas",
+                min_value=1,
+                max_value=5,
+                value=2
+            )
+            
+            capas = []
+            for i in range(n_capas):
+                col1, col2 = st.columns(2)
+                with col1:
+                    prof = st.number_input(
+                        f"Profundidad capa {i+1} (m)",
+                        min_value=0.0 if i == 0 else capas[-1].profundidad + 0.1,
+                        value=float(i+1),
+                        step=0.1
+                    )
+                with col2:
+                    res = st.number_input(
+                        f"Resistividad capa {i+1} (Ω⋅m)",
+                        min_value=1.0,
+                        value=100.0 * (i+1),
+                        step=10.0
+                    )
+                capas.append(CapaSuelo(prof, res, f"Capa {i+1}"))
+            
+            suelo = SueloMulticapa(capas)
+            
+        elif analisis_type == "Análisis de costos":
+            st.write("Análisis económico de la malla")
+            
+            analisis = AnalisisCostos()
+            if st.session_state.malla:
+                costos_iniciales = analisis.calcular_costo_inicial(st.session_state.malla)
+                
+                st.write("Costos iniciales:")
+                for item, costo in costos_iniciales.items():
+                    st.write(f"- {item}: ${costo:.2f}")
+                
+                años = st.number_input(
+                    "Años de análisis",
+                    min_value=1,
+                    max_value=50,
+                    value=30
+                )
+                
+                costos_totales = analisis.calcular_costo_vida_util(
+                    st.session_state.malla,
+                    años
+                )
+                
+                st.write("Costos totales (vida útil):")
+                for item, costo in costos_totales.items():
+                    st.write(f"- {item}: ${costo:.2f}")
+                
+                costo_total = sum(costos_totales.values())
+                st.info(f"Costo total en {años} años: ${costo_total:.2f}")
+                
+        else:  # Optimización automática
+            st.write("Optimización automática del diseño")
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                area_min = st.number_input(
+                    "Área mínima (m²)",
+                    min_value=1.0,
+                    value=4.0
+                )
+                
+                I_falla_max = st.number_input(
+                    "Corriente de falla máxima (A)",
+                    min_value=100.0,
+                    value=1000.0
+                )
+                
+            with col2:
+                area_max = st.number_input(
+                    "Área máxima (m²)",
+                    min_value=area_min + 1,
+                    value=16.0
+                )
+                
+                R_max = st.number_input(
+                    "Resistencia máxima (Ω)",
+                    min_value=0.1,
+                    value=5.0
+                )
+            
+            if st.button("Optimizar diseño"):
+                try:
+                    # Usar primera capa del suelo multicapa si está definido
+                    if 'suelo' in locals():
+                        optimizador = OptimizadorMalla(suelo, AnalisisCostos())
+                    else:
+                        # Crear suelo simple
+                        suelo_simple = SueloMulticapa([CapaSuelo(2.0, resistividad)])
+                        optimizador = OptimizadorMalla(suelo_simple, AnalisisCostos())
+                    
+                    restricciones = {
+                        'I_falla': I_falla_max,
+                        'R_max': R_max,
+                        't_c': 0.5
+                    }
+                    
+                    resultado = optimizador.optimizar_diseño(
+                        area_min,
+                        area_max,
+                        restricciones
+                    )
+                    
+                    if resultado:
+                        st.success("¡Diseño optimizado encontrado!")
+                        malla_opt = resultado['malla']
+                        st.write(f"""
+                        Características del diseño óptimo:
+                        - Dimensiones: {malla_opt.ancho}m x {malla_opt.largo}m
+                        - Espaciamiento: {malla_opt.espaciamiento_x:.2f}m
+                        - Profundidad: {malla_opt.profundidad}m
+                        - Costo total: ${resultado['costo']:.2f}
+                        """)
+                        
+                        # Actualizar malla actual
+                        st.session_state.malla = malla_opt
+                    else:
+                        st.error("No se encontró un diseño que cumpla con las restricciones")
+                        
+                except Exception as e:
+                    st.error(f"Error en la optimización: {str(e)}")
 
 if __name__ == "__main__":
     run_app()
