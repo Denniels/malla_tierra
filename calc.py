@@ -6,8 +6,9 @@ from validations import (
     validate_grid_spacing,
     ValidationError
 )
+from malla import MallaTierra, Conductor
 
-def calc_malla_tierra(I, R_des, sigma, rho, I_falla, L, spacing=0.5, h=0.5):
+def calc_malla_tierra(I, R_des, sigma, rho, I_falla, L, spacing=0.5, h=0.5, conductor=None):
     """
     Calcula los parámetros de la malla de tierra según IEEE-80.
     
@@ -20,6 +21,7 @@ def calc_malla_tierra(I, R_des, sigma, rho, I_falla, L, spacing=0.5, h=0.5):
         L (float): Longitud total de la malla (m)
         spacing (float): Espaciamiento entre nodos (m)
         h (float): Profundidad de enterramiento (m)
+        conductor (Optional[Conductor]): Conductor a utilizar
     
     Returns:
         tuple: (I, R_des, sigma, rho, I_falla, L, A, n_barras)
@@ -32,12 +34,16 @@ def calc_malla_tierra(I, R_des, sigma, rho, I_falla, L, spacing=0.5, h=0.5):
     validate_fault_current(I_falla)
     validate_grid_spacing(spacing)
     
-    # Cálculos
+    # Cálculos básicos
     A = (I_falla * rho) / (R_des * sigma)
-    n_barras = max(round(L / spacing) + 1, 3)
     
-    # Asegurar número impar de barras para centrar la malla
-    if n_barras % 2 == 0:
-        n_barras += 1
-        
-    return I, R_des, sigma, rho, I_falla, L, A, n_barras
+    # Crear malla cuadrada por defecto
+    malla = MallaTierra(
+        ancho=L,
+        largo=L,
+        espaciamiento=spacing,
+        conductor=conductor,
+        profundidad=h
+    )
+    
+    return I, R_des, sigma, rho, I_falla, L, A, malla.n_x

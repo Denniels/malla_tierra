@@ -19,10 +19,10 @@
 - [x] Análisis de profundidad de enterramiento
 
 ## 3. Flexibilidad en el Diseño (Media Prioridad)
-- [ ] Soporte para mallas rectangulares
-- [ ] Diferentes tipos de conductores
-- [ ] Integración de varillas verticales
-- [ ] Soporte para mallas irregulares
+- [x] Soporte para mallas rectangulares
+- [x] Diferentes tipos de conductores
+- [x] Integración de varillas verticales
+- [x] Soporte para mallas irregulares
 - [ ] Manejo de obstáculos
 
 ## 4. Visualización y Reportes (Media Prioridad)

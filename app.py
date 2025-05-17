@@ -8,6 +8,7 @@ from calc_avanzado import (
 )
 from graph import generate_malla_tierra
 from validations import ValidationError
+from malla import Conductor
 import matplotlib.pyplot as plt
 
 def run_app():
@@ -15,7 +16,7 @@ def run_app():
     st.write("Diseño según norma IEEE-80")
     
     # Crear pestañas para organizar la interfaz
-    tab1, tab2 = st.tabs(["Parámetros Básicos", "Parámetros Avanzados"])
+    tab1, tab2, tab3 = st.tabs(["Parámetros Básicos", "Diseño Avanzado", "Análisis"])
     
     with tab1:
         # Columnas para parámetros
@@ -105,17 +106,94 @@ def run_app():
             )
 
     with tab2:
-        st.subheader("Parámetros Avanzados")
+        st.subheader("Configuración de la Malla")
         col3, col4 = st.columns(2)
         
         with col3:
+            tipo_malla = st.radio(
+                "Tipo de malla",
+                ["Cuadrada", "Rectangular"],
+                index=0,
+                help="Seleccione la forma de la malla"
+            )
+            
+            if tipo_malla == "Rectangular":
+                ancho = st.number_input(
+                    "Ancho de la malla (m)",
+                    min_value=0.5,
+                    value=2.0,
+                    step=0.5
+                )
+                largo = st.number_input(
+                    "Largo de la malla (m)",
+                    min_value=0.5,
+                    value=3.0,
+                    step=0.5
+                )
+            else:
+                ancho = largo = L
+            
+            material_conductor = st.selectbox(
+                "Material del conductor",
+                ["Cobre", "Acero Galvanizado"],
+                help="Material del conductor de la malla"
+            )
+            
+            diametro_conductor = st.number_input(
+                "Diámetro del conductor (mm)",
+                min_value=8.0,
+                max_value=50.0,
+                value=10.0,
+                step=0.5
+            )
+            
+        with col4:
+            usar_varillas = st.checkbox(
+                "Usar varillas verticales",
+                help="Añadir varillas de tierra verticales"
+            )
+            
+            if usar_varillas:
+                n_varillas = st.number_input(
+                    "Número de varillas",
+                    min_value=1,
+                    max_value=20,
+                    value=4
+                )
+                
+                longitud_varilla = st.number_input(
+                    "Longitud de varillas (m)",
+                    min_value=1.0,
+                    max_value=6.0,
+                    value=2.4,
+                    step=0.1
+                )
+                
+                diametro_varilla = st.number_input(
+                    "Diámetro de varillas (mm)",
+                    min_value=12.7,
+                    max_value=25.4,
+                    value=16.0,
+                    step=0.1
+                )
+        
+        # Crear conductor según selección
+        if material_conductor == "Cobre":
+            conductor = Conductor.get_conductor_cobre(diametro_conductor)
+        else:
+            conductor = Conductor.get_conductor_acero(diametro_conductor)
+            
+    with tab3:
+        st.subheader("Parámetros Avanzados")
+        col5, col6 = st.columns(2)
+        
+        with col5:
             t_c = st.number_input(
                 "Tiempo de despeje de falla (s)",
                 min_value=0.03,
                 max_value=3.0,
                 value=0.5,
-                step=0.01,
-                help="Tiempo que tarda la protección en despejar la falla"
+                step=0.01
             )
             
             rho_s = st.number_input(
@@ -123,27 +201,16 @@ def run_app():
                 min_value=100.0,
                 max_value=10000.0,
                 value=3000.0,
-                step=100.0,
-                help="Resistividad de la capa superficial (grava, asfalto, etc.)"
+                step=100.0
             )
             
-        with col4:
+        with col6:
             T_suelo = st.number_input(
                 "Temperatura del suelo (°C)",
                 min_value=-20.0,
                 max_value=50.0,
                 value=25.0,
-                step=1.0,
-                help="Temperatura del suelo para factor de corrección"
-            )
-            
-            d_conductor = st.number_input(
-                "Diámetro del conductor (mm)",
-                min_value=8.0,
-                max_value=50.0,
-                value=10.0,
-                step=0.5,
-                help="Diámetro del conductor de la malla"
+                step=1.0
             )
 
     try:
@@ -154,9 +221,10 @@ def run_app():
             sigma=sigma,
             rho=resistividad,
             I_falla=I_falla,
-            L=L,
+            L=L if tipo_malla == "Cuadrada" else max(ancho, largo),
             spacing=spacing_value,
-            h=h
+            h=h,
+            conductor=conductor
         )
         
         # Calcular parámetros avanzados
@@ -172,7 +240,7 @@ def run_app():
         )
         
         R_malla = calcular_resistencia_malla(
-            resistividad_corregida, L, n_barras, h, d_conductor/1000
+            resistividad_corregida, L, n_barras, h, diametro_conductor/1000
         )
 
         # Mostrar información básica de la malla
