@@ -44,7 +44,7 @@
 - [x] Sistema de guardado/carga de proyectos
 - [x] Presets para instalaciones comunes
 - [x] Sistema de unidades configurable
-- [ ] Historial de diseños
+- [x] Historial de diseños
 
 ## 7. Documentación y Ayuda (Baja Prioridad)
 - [ ] Manual técnico detallado

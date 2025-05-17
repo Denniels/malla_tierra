@@ -1,8 +1,9 @@
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 import json
 import os
 from datetime import datetime
 from dataclasses import asdict
+from historial import HistorialDiseños, VersionMalla
 
 class ProyectoMallaTierra:
     """Clase para manejar el guardado y carga de proyectos de malla de tierra"""
@@ -15,6 +16,8 @@ class ProyectoMallaTierra:
         self.parametros: Dict[str, Any] = {}
         self.resultados: Dict[str, Any] = {}
         self.configuracion: Dict[str, Any] = {}
+        self._historial = HistorialDiseños()
+        self.version_actual: Optional[VersionMalla] = None
     
     def guardar(self, ruta: str) -> str:
         """Guarda el proyecto en formato JSON"""
@@ -61,3 +64,37 @@ class ProyectoMallaTierra:
         """Actualiza los resultados del proyecto"""
         self.resultados.update(kwargs)
         self.fecha_modificacion = datetime.now()
+    
+    def guardar_version(self, descripcion: str) -> VersionMalla:
+        """Guarda una nueva versión del diseño actual"""
+        version = self._historial.guardar_version(
+            proyecto_id=self.nombre,
+            descripcion=descripcion,
+            parametros=self.parametros,
+            resultados=self.resultados
+        )
+        self.version_actual = version
+        return version
+    
+    def obtener_versiones(self) -> List[VersionMalla]:
+        """Obtiene todas las versiones del proyecto"""
+        return self._historial.obtener_versiones(self.nombre)
+    
+    def cargar_version(self, version_id: str) -> bool:
+        """Carga una versión específica del proyecto"""
+        version = self._historial.obtener_version(self.nombre, version_id)
+        if version:
+            self.parametros = version.parametros.copy()
+            if version.resultados:
+                self.resultados = version.resultados.copy()
+            self.version_actual = version
+            self.fecha_modificacion = datetime.now()
+            return True
+        return False
+    
+    def comparar_con_version(self, version_id: str) -> Dict:
+        """Compara la versión actual con una versión específica"""
+        version = self._historial.obtener_version(self.nombre, version_id)
+        if version and self.version_actual:
+            return self._historial.comparar_versiones(version, self.version_actual)
+        return {}

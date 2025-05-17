@@ -99,7 +99,7 @@ def run_app():
         st.session_state.malla = None
     
     # Barra superior para archivo, presets y unidades
-    col_archivo, col_preset, col_unidades = st.columns([2, 2, 1])
+    col_archivo, col_preset, col_unidades, col_historial = st.columns([2, 2, 1, 2])
     
     with col_archivo:
         archivo_option = st.selectbox(
@@ -205,6 +205,54 @@ def run_app():
                 )
             st.session_state.sistema_actual = nuevo_sistema_enum
             st.rerun()  # Recargar la interfaz con las nuevas unidades
+    
+    with col_historial:
+        if st.session_state.proyecto_actual:
+            st.subheader("Historial")
+            versiones = st.session_state.proyecto_actual.obtener_versiones()
+            
+            if versiones:
+                version_seleccionada = st.selectbox(
+                    "Versiones guardadas",
+                    options=[(v.id, f"{v.fecha.strftime('%d/%m/%Y %H:%M')} - {v.descripcion}") for v in versiones],
+                    format_func=lambda x: x[1]
+                )
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.button("Cargar versión"):
+                        if st.session_state.proyecto_actual.cargar_version(version_seleccionada[0]):
+                            st.success("Versión cargada correctamente")
+                            st.rerun()
+                        else:
+                            st.error("Error al cargar la versión")
+                            
+                with col2:
+                    if st.button("Comparar"):
+                        diferencias = st.session_state.proyecto_actual.comparar_con_version(version_seleccionada[0])
+                        if diferencias:
+                            st.write("### Diferencias encontradas")
+                            if diferencias['parametros']:
+                                st.write("#### Parámetros")
+                                for param, vals in diferencias['parametros'].items():
+                                    st.write(f"- {param}: {vals['anterior']} → {vals['actual']}")
+                            if diferencias['resultados']:
+                                st.write("#### Resultados")
+                                for res, vals in diferencias['resultados'].items():
+                                    st.write(f"- {res}: {vals['anterior']} → {vals['actual']}")
+            
+            descripcion = st.text_input(
+                "Descripción de la versión",
+                value="",
+                help="Describe los cambios realizados en esta versión"
+            )
+            
+            if st.button("Guardar versión actual"):
+                if descripcion:
+                    version = st.session_state.proyecto_actual.guardar_version(descripcion)
+                    st.success(f"Versión {version.id} guardada correctamente")
+                else:
+                    st.error("Por favor, ingrese una descripción para la versión")
     
     # Separador visual
     st.markdown("---")
@@ -695,8 +743,14 @@ def run_app():
                     h=h,
                     conductor=conductor
                 )
-                
                 st.success("Cálculos realizados correctamente")
+                
+                # Guardar versión automáticamente después del cálculo
+                if st.session_state.proyecto_actual:
+                    version = st.session_state.proyecto_actual.guardar_version(
+                        f"Cálculo automático - {datetime.now().strftime('%d/%m/%Y %H:%M')}"
+                    )
+                    st.info(f"Versión {version.id} guardada automáticamente")
             except ValidationError as e:
                 st.error(f"Error de validación: {str(e)}")
             except Exception as e:
