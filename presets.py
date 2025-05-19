@@ -87,5 +87,33 @@ PRESETS_INSTALACIONES: Dict[str, Dict[str, Any]] = {
             "I_falla": 12000.0,
             "t_c": 0.25
         }
+    },
+    "Comercial": {
+        "descripcion": "Edificio comercial o centro comercial pequeño",
+        "parametros": {
+            "ancho": 15.0,
+            "largo": 20.0,
+            "spacing": 2.5,
+            "profundidad": 0.6,
+            "n_varillas": 8,
+            "longitud_varilla": 2.4,
+            "resistividad": 150.0,
+            "I_falla": 4000.0,
+            "t_c": 0.4
+        }
+    },
+    "Domiciliario": {
+        "descripcion": "Instalación residencial o edificio de apartamentos",
+        "parametros": {
+            "ancho": 8.0,
+            "largo": 10.0,
+            "spacing": 2.0,
+            "profundidad": 0.5,
+            "n_varillas": 4,
+            "longitud_varilla": 2.4,
+            "resistividad": 100.0,
+            "I_falla": 2000.0,
+            "t_c": 0.5
+        }
     }
 }

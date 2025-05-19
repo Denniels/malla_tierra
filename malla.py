@@ -78,15 +78,11 @@ class MallaTierra:
     
     def agregar_varilla(self, x: float, y: float, longitud: float = 2.4, diametro: float = 16.0):
         """Agrega una varilla vertical a la malla"""
-        # Validar que la posición esté dentro de la malla
-        if not (0 <= x <= self.ancho and 0 <= y <= self.largo):
-            raise ValueError("La posición de la varilla debe estar dentro de los límites de la malla")
-        
         varilla = Varilla(
-            longitud=longitud,
-            diametro=diametro,
             posicion_x=x,
-            posicion_y=y
+            posicion_y=y,
+            diametro=diametro,
+            longitud=longitud
         )
         self.varillas.append(varilla)
     
@@ -110,6 +106,13 @@ class MallaTierra:
         l_varillas = sum(v.longitud for v in self.varillas)
         
         return l_horizontal + l_vertical + l_varillas
+    
+    def get_longitud_total_conductores(self) -> float:
+        """
+        Alias de calcular_longitud_total() para mantener compatibilidad.
+        Devuelve la longitud total de conductores en metros.
+        """
+        return self.calcular_longitud_total()
     
     def tiene_obstaculo(self, x: float, y: float) -> bool:
         """

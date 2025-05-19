@@ -56,8 +56,12 @@ def calc_malla_tierra(I, R_des, sigma, rho, I_falla, L, spacing=0.5, h=0.5, cond
     margen = 1.0  # 1 metro de margen según IEEE-80
     A_efectiva = (malla.ancho + 2*margen) * (malla.largo + 2*margen)
     
-    # La resistencia equivalente se calcula con el área efectiva
-    R_equiv = rho / (4 * np.sqrt(A_efectiva) + A_efectiva/h)
+    # Calcular longitud total de conductores (horizontales y verticales)
+    L_total = malla.get_longitud_total_conductores()
+    
+    # La resistencia equivalente se calcula considerando la longitud total de conductores
+    # y el área efectiva según IEEE-80 sección 14.3
+    R_equiv = rho * (1/L_total + 1/np.sqrt(20*A_efectiva) * (1 + 1/(1 + h * np.sqrt(20/A_efectiva))))
     
     # Validar que la resistencia equivalente cumpla con el criterio de diseño
     if R_equiv > R_des:

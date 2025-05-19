@@ -364,3 +364,311 @@ def generar_reporte_markdown(
             md.append(f"![{titulo}]({ruta})\n")
     
     return "\n".join(md)
+
+def generar_vista_3d_multicapa(malla, capas, mostrar_varillas=True, progress_callback=None):
+    """
+    Genera una visualización 3D de la malla de tierra con múltiples capas usando PyVista
+    
+    Args:
+        malla: Objeto MallaTierra
+        capas: Lista de objetos CapaSuelo
+        mostrar_varillas: Si se deben mostrar las varillas
+        progress_callback: Función para actualizar el progreso (opcional)
+    
+    Returns:
+        str: Ruta al archivo de imagen generado
+    """
+    import pyvista as pv
+    import numpy as np
+    from datetime import datetime
+    import os
+    
+    if not capas:
+        raise ValueError("No hay capas de suelo definidas para la visualización 3D")
+    
+    # Notificar inicio
+    if progress_callback:
+        progress_callback(0.0, "Iniciando visualización 3D...")
+    
+    # Crear un plotter con configuración optimizada
+    plotter = pv.Plotter(off_screen=True)  # off_screen=True para mejor rendimiento
+    plotter.set_background('white')
+    
+    # Colores optimizados para mejor visibilidad
+    colores_capas = [
+        (0.8, 0.4, 0.4, 0.3),  # Rojo con menos opacidad
+        (0.4, 0.4, 0.8, 0.3),  # Azul con menos opacidad
+        (0.4, 0.8, 0.4, 0.3),  # Verde con menos opacidad
+        (0.8, 0.8, 0.4, 0.3),  # Amarillo con menos opacidad
+    ]
+    
+    # Crear una malla simplificada para cada capa
+    total_steps = len(capas) + (1 if mostrar_varillas else 0)
+    current_step = 0
+    
+    for i, capa in enumerate(capas):
+        if progress_callback:
+            progress_callback((current_step + 0.5) / total_steps, f"Procesando capa {i+1}...")
+        
+        # Crear puntos para la malla con resolución optimizada
+        n_points = min(malla.n_x, 20)  # Limitar el número de puntos para mejor rendimiento
+        x = np.linspace(0, malla.ancho, n_points)
+        y = np.linspace(0, malla.largo, n_points)
+        z = -capa.profundidad
+        
+        # Crear grilla de conductores con menor densidad
+        for yi in y[::2]:  # Tomar un punto cada dos para reducir densidad
+            for j in range(0, len(x)-1, 2):  # Reducir densidad de líneas
+                line = pv.Line((x[j], yi, z), (x[j+1], yi, z))
+                plotter.add_mesh(line, color=colores_capas[i % len(colores_capas)], line_width=2)
+        
+        # Crear plano semitransparente para la capa
+        grid = pv.StructuredGrid()
+        grid.points = np.array([(x_, y_, z) for x_ in x for y_ in y])
+        grid.dimensions = [len(x), len(y), 1]
+        plotter.add_mesh(grid, color=colores_capas[i % len(colores_capas)], opacity=0.2)
+        
+        # Agregar texto con información
+        plotter.add_text(
+            f"Capa {i+1}\n{capa.profundidad}m\n{capa.resistividad}Ω⋅m",
+            position=(malla.ancho + 1, 0, -capa.profundidad),
+            font_size=10,
+            color='black'
+        )
+        
+        current_step += 1
+    
+    # Agregar varillas si se solicita
+    if mostrar_varillas and hasattr(malla, 'varillas'):
+        if progress_callback:
+            progress_callback((current_step + 0.5) / total_steps, "Agregando varillas...")
+            
+        for varilla in malla.varillas:
+            inicio = (varilla.posicion_x, varilla.posicion_y, -capas[0].profundidad)
+            fin = (varilla.posicion_x, varilla.posicion_y, 
+                  -(capas[0].profundidad + varilla.longitud))
+            varilla_line = pv.Line(inicio, fin)
+            plotter.add_mesh(varilla_line, color='black', line_width=3)
+    
+    # Ajustar la cámara y vista
+    if progress_callback:
+        progress_callback(0.9, "Finalizando visualización...")
+        
+    plotter.camera_position = 'iso'
+    plotter.camera.zoom(1.2)
+    
+    # Generar imagen
+    os.makedirs("reportes", exist_ok=True)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    ruta_salida = os.path.join("reportes", f"malla_3d_{timestamp}.png")
+    
+    # Guardar con resolución optimizada
+    plotter.show(screenshot=ruta_salida, window_size=[800, 600])
+    
+    if progress_callback:
+        progress_callback(1.0, "Visualización completada")
+    
+    return ruta_salida
+
+def generar_vista_3d_multicapa(
+    malla,
+    capas,
+    mostrar_varillas=True,
+    progress_callback=None,
+    mostrar_uniones=True,
+    tipo_union="Soldadura exotérmica"
+):
+    """
+    Genera una vista 3D de la malla con capas y uniones.
+    
+    Args:
+        malla: Objeto MallaTierra
+        capas: Lista de objetos CapaSuelo
+        mostrar_varillas: Boolean para mostrar varillas
+        progress_callback: Función para actualizar progreso
+        mostrar_uniones: Boolean para mostrar puntos de unión
+        tipo_union: Tipo de unión ("Soldadura exotérmica" o "Conectores mecánicos")
+    """
+    try:
+        import pyvista as pv
+        import tempfile
+        import numpy as np
+        
+        if progress_callback:
+            progress_callback(0.1, "Iniciando visualización 3D...")
+        
+        # Crear plotter con mejor calidad
+        plotter = pv.Plotter(off_screen=True, window_size=[1920, 1080])
+        plotter.set_background('white')
+        
+        # Configurar iluminación
+        plotter.add_light(pv.Light(position=(0, 0, 1), intensity=0.8))
+        plotter.add_light(pv.Light(position=(1, 1, -1), intensity=0.3))
+        
+        # Calcular dimensiones totales para los límites
+        x_min, x_max = -malla.ancho * 0.1, malla.ancho * 1.1
+        y_min, y_max = -malla.largo * 0.1, malla.largo * 1.1
+        z_min = -max(capa.profundidad for capa in capas) * 1.1
+        z_max = malla.ancho * 0.1
+        
+        # Establecer los límites explícitamente como una tupla de 6 elementos
+        plotter.set_bounds((x_min, x_max, y_min, y_max, z_min, z_max))
+        
+        # Crear una caja invisible que define los límites
+        box = pv.Box([x_min, y_min, z_min], [x_max, y_max, z_max])
+        plotter.add_mesh(box, opacity=0.0)
+        
+        # Crear grid de referencia en la superficie
+        x = np.linspace(0, malla.ancho, 20)
+        y = np.linspace(0, malla.largo, 20)
+        z = np.zeros((20, 20))
+        x_grid, y_grid = np.meshgrid(x, y)
+        grid = pv.StructuredGrid(x_grid, y_grid, z)
+        plotter.add_mesh(grid, color='lightgray', opacity=0.3)
+        
+        # Variables para el cálculo de resistencias equivalentes
+        resistencias_capas = []
+        resistencia_total = 0
+        
+        # Panel de información
+        info_panel = []
+        info_panel.append("INFORMACIÓN DE CAPAS")
+        info_panel.append("-----------------")
+        
+        # Dibujar capas del suelo y sus mallas
+        for i, capa in enumerate(capas):
+            # Calcular resistencia de esta capa
+            area = malla.ancho * malla.largo
+            espesor = capa.profundidad - (capas[i-1].profundidad if i > 0 else 0)
+            resistencia_capa = capa.resistividad * espesor / area
+            resistencias_capas.append(resistencia_capa)
+            
+            # Calcular resistencia equivalente hasta esta capa
+            if i == 0:
+                resistencia_total = resistencia_capa
+            else:
+                resistencia_total = 1 / (1/resistencia_total + 1/resistencia_capa)
+            
+            # Actualizar panel de información
+            info_panel.append(f"\nCapa {i+1}:")
+            info_panel.append(f"Prof: {capa.profundidad}m")
+            info_panel.append(f"Espesor: {espesor:.2f}m")
+            info_panel.append(f"ρ: {capa.resistividad}Ω⋅m")
+            info_panel.append(f"R capa: {resistencia_capa:.2f}Ω")
+            info_panel.append(f"R equiv: {resistencia_total:.2f}Ω")
+            
+            # Dibujar capa de suelo
+            box = pv.Box([0, 0, -capa.profundidad],
+                        [malla.ancho, malla.largo, espesor])
+            
+            # Color basado en la resistividad (más rojo = más resistivo)
+            intensidad_rojo = min(1.0, capa.resistividad / 1000)
+            color = f'#{int(255*intensidad_rojo):02x}{int(255*(1-intensidad_rojo)):02x}{int(255*(1-intensidad_rojo)):02x}'
+            
+            # Agregar capa con bordes
+            plotter.add_mesh(box, opacity=0.3, color=color,
+                           label=f'Capa {i+1}',
+                           show_edges=True,
+                           edge_color='black',
+                           line_width=1)
+            
+            # Dibujar malla en esta capa
+            x_nodos, y_nodos = malla.obtener_nodos()
+            
+            # Conductores horizontales y verticales con mayor grosor
+            for j in range(len(x_nodos)):
+                line = pv.Line([x_nodos[j,0], y_nodos[j,0], -capa.profundidad],
+                             [x_nodos[j,-1], y_nodos[j,-1], -capa.profundidad])
+                plotter.add_mesh(line, color='blue', line_width=4)
+            
+            for j in range(len(x_nodos[0])):
+                line = pv.Line([x_nodos[0,j], y_nodos[0,j], -capa.profundidad],
+                             [x_nodos[-1,j], y_nodos[-1,j], -capa.profundidad])
+                plotter.add_mesh(line, color='blue', line_width=4)
+            
+            # Mostrar conexiones entre capas
+            if i < len(capas) - 1:
+                for x, y in zip(x_nodos.flatten(), y_nodos.flatten()):
+                    # Línea de conexión
+                    conexion = pv.Line([x, y, -capa.profundidad],
+                                     [x, y, -capas[i+1].profundidad])
+                    plotter.add_mesh(conexion, color='purple', line_width=2)
+                    
+                    if mostrar_uniones:
+                        # Uniones en ambos extremos
+                        for z in [-capa.profundidad, -capas[i+1].profundidad]:
+                            sphere = pv.Sphere(radius=0.12, center=(x, y, z))
+                            color = 'orange' if tipo_union == "Soldadura exotérmica" else 'green'
+                            plotter.add_mesh(sphere, color=color)
+            
+            if progress_callback:
+                progress_callback(0.2 + 0.6*i/len(capas), f"Dibujando capa {i+1}...")
+        
+        # Agregar panel de información completo
+        info_panel.append("\nRESISTENCIA TOTAL")
+        info_panel.append("-----------------")
+        info_panel.append(f"R total: {resistencia_total:.2f}Ω")
+        
+        # Calcular y mostrar las resistencias entre capas
+        info_text = "Resistencias entre capas:\n"
+        for i in range(len(capas)-1):
+            capa_actual = capas[i]
+            capa_siguiente = capas[i+1]
+            resistencia = (capa_actual.resistividad + capa_siguiente.resistividad) / 2 * \
+                         (capa_siguiente.profundidad - capa_actual.profundidad) / \
+                         (malla.ancho * malla.largo)
+            info_text += f"Capa {i+1} → {i+2}: {resistencia:.2f}Ω\n"
+        
+        # Añadir el panel de información
+        plotter.add_text(info_text, position='upper_left', font_size=12)
+        
+        # Configurar la vista final
+        plotter.view_isometric()
+        plotter.show_grid()
+        
+        # Guardar imagen con alta calidad
+        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.png')
+        plotter.screenshot(temp_file.name, transparent_background=True, window_size=[1920, 1080])
+        
+        if progress_callback:
+            progress_callback(1.0, "¡Visualización completada!")
+        
+        return temp_file.name
+        
+    except ImportError as e:
+        raise ImportError("Se requiere PyVista para la visualización 3D") from e
+
+def calcular_materiales(malla, tipo_union="Soldadura exotérmica"):
+    """
+    Calcula la cantidad de materiales necesarios para la instalación.
+    
+    Args:
+        malla: Objeto MallaTierra
+        tipo_union: Tipo de unión a utilizar
+    
+    Returns:
+        dict: Diccionario con cantidades de materiales
+    """
+    # Calcular longitud total de conductor
+    long_horizontal = (malla.ancho/malla.espaciamiento + 1) * malla.largo + \
+                     (malla.largo/malla.espaciamiento + 1) * malla.ancho
+    
+    # Calcular longitud de varillas
+    n_varillas = len(list(malla.obtener_varillas()))
+    long_varillas = sum(l for _, _, l in malla.obtener_varillas())
+    
+    # Calcular número de uniones
+    n_uniones_conductores = (int(malla.ancho/malla.espaciamiento) + 1) * \
+                           (int(malla.largo/malla.espaciamiento) + 1)
+    n_uniones_varillas = n_varillas
+    
+    return {
+        "conductor_horizontal": round(long_horizontal, 2),
+        "conductor_vertical": round(long_varillas, 2),
+        "varillas": n_varillas,
+        "uniones_conductores": n_uniones_conductores,
+        "uniones_varillas": n_uniones_varillas,
+        "material_union": round((n_uniones_conductores + n_uniones_varillas) * \
+                              (0.15 if tipo_union == "Soldadura exotérmica" else 0.1), 2),
+        "tipo_union": tipo_union
+    }

@@ -23,7 +23,6 @@
 - [x] Diferentes tipos de conductores
 - [x] Integración de varillas verticales
 - [x] Soporte para mallas irregulares
-- [ ] Manejo de obstáculos
 
 ## 4. Visualización y Reportes (Media Prioridad)
 - [x] Mapa de calor de distribución de potenciales
@@ -47,15 +46,34 @@
 - [x] Historial de diseños
 
 ## 7. Documentación y Ayuda (Baja Prioridad)
-- [ ] Manual técnico detallado
-- [ ] Ejemplos prácticos resueltos
-- [ ] Referencias a normas aplicables
-- [ ] Guía de troubleshooting
-- [ ] Videos tutoriales
+- [x] Manual técnico detallado
+- [x] Ejemplos prácticos resueltos
+- [x] Referencias a normas aplicables
+- [x] Guía de troubleshooting
+- [ ] Videos tutoriales (pendiente de recursos multimedia)
 
 ## 8. Interoperabilidad (Baja Prioridad)
-- [ ] Exportación a formatos CAD
-- [ ] Importación de datos de medición
-- [ ] Integración con software de diseño eléctrico
-- [ ] API para integración
-- [ ] Exportación de resultados en formatos estándar
+- [x] Exportación a formatos CAD
+  - [x] Exportación a DXF (AutoCAD)
+  - [x] Soporte para capas y colores
+  - [x] Manejo de conductores y varillas
+- [x] Importación de datos de medición
+  - [x] Importación desde CSV
+  - [x] Importación desde Excel
+  - [x] Modelo de datos estandarizado
+- [x] Integración con software de diseño eléctrico
+  - [x] Exportación a ETAP (XML)
+  - [x] Exportación a Excel
+  - [x] Exportación a JSON
+- [x] API para integración
+  - [x] API REST con FastAPI
+  - [x] Documentación automática OpenAPI
+  - [x] Endpoints para parámetros y resultados
+- [x] Exportación de resultados en formatos estándar
+  - [x] Hoja de cálculo Excel
+  - [x] XML estructurado
+  - [x] JSON para integración
+
+## 9. Mejoras Futuras (Prioridad Pospuesta)
+- [ ] Manejo de obstáculos (pospuesto por decisión de proyecto)
+  - Nota: Esta característica ha sido pospuesta para concentrarse en aspectos críticos como la validación de resistencia y documentación.

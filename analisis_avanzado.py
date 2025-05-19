@@ -125,7 +125,7 @@ class AnalisisCostos:
             ),
             "Tratamiento": MaterialCosto(
                 nombre="Tratamiento de suelo",
-                costo_unitario=5.0,  # USD/m
+                costo_unitario=5.0,  # USD/m²
                 vida_util=10,
                 tasa_degradacion=0.05,  # 5% anual
                 costo_mantenimiento=0.03,  # 3% anual
@@ -155,7 +155,51 @@ class AnalisisCostos:
         costos["Tratamiento"] = area_tratamiento * self.materiales["Tratamiento"].costo_unitario
         
         return costos
+    
+    def calcular_costo_vida_util(self, malla, años: int, tasa_interes: float = 0.05) -> Dict[str, float]:
+        """
+        Calcula el costo total de la malla considerando su vida útil.
         
+        Args:
+            malla: Objeto MallaTierra
+            años: Período de análisis en años
+            tasa_interes: Tasa de interés anual (default 5%)
+        
+        Returns:
+            Dict[str, float]: Desglose de costos en valor presente
+        """
+        costos_iniciales = self.calcular_costo_inicial(malla)
+        costos_totales = {k: v for k, v in costos_iniciales.items()}
+        material = "Cobre" if malla.conductor.material == "Cobre" else "Acero"
+        
+        for item, costo_inicial in costos_iniciales.items():
+            material_info = self.materiales[item if item != "Conductores" else material]
+            
+            # Factor de valor presente para anualidades
+            factor_vp = (1 - (1 + tasa_interes)**-años) / tasa_interes
+            
+            # Costos de mantenimiento anuales
+            costo_mant_anual = costo_inicial * material_info.costo_mantenimiento
+            costos_totales[f"{item}_Mantenimiento"] = costo_mant_anual * factor_vp * material_info.factor_ambiental
+            
+            # Reemplazos por vida útil
+            n_reemplazos = años // material_info.vida_util
+            if n_reemplazos > 0:
+                for i in range(n_reemplazos):
+                    año_reemplazo = (i + 1) * material_info.vida_util
+                    if año_reemplazo < años:
+                        # Factor de valor presente para costo futuro
+                        factor_vp_reemplazo = 1 / ((1 + tasa_interes)**año_reemplazo)
+                        # Costo de reemplazo considerando degradación acumulada
+                        degradacion_acum = (1 + material_info.tasa_degradacion)**año_reemplazo
+                        costo_reemplazo = costo_inicial * degradacion_acum * material_info.factor_ambiental
+                        costos_totales[f"{item}_Reemplazo_{i+1}"] = costo_reemplazo * factor_vp_reemplazo
+            
+            # Ajuste del costo inicial por factor ambiental
+            costos_totales[item] *= material_info.factor_ambiental
+        
+        return costos_totales
+
 class OptimizadorMalla:
     """Clase para optimización automática del diseño"""
     def __init__(self, suelo: SueloMulticapa, analisis_costos: AnalisisCostos):

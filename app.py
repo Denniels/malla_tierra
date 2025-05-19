@@ -20,12 +20,16 @@ from visualizacion import (
     generar_perfil_suelo,
     generar_reporte_pdf,
     generar_reporte_markdown,
-    calcular_potenciales_superficie
+    calcular_potenciales_superficie,
+    generar_vista_3d_multicapa,
+    calcular_materiales,
+    calcular_potencial_punto
 )
 from graph import generate_malla_tierra
 from validations import ValidationError
 from malla import Conductor, MallaTierra
 import matplotlib.pyplot as plt
+import numpy as np
 import os
 from datetime import datetime
 
@@ -484,6 +488,74 @@ def run_app():
                     help="Diámetro de las varillas"
                 )
     
+        # Agregar botón de cálculo y validación
+        if st.button("🔍 Calcular y Validar", use_container_width=True):
+            try:
+                # Crear objeto conductor
+                conductor = Conductor.get_conductor_cobre() if material_conductor == "Cobre" else Conductor.get_conductor_acero()
+                conductor.diametro = diametro_conductor / 1000  # convertir mm a m
+                
+                # Crear malla
+                malla = MallaTierra(
+                    ancho=ancho,
+                    largo=largo,
+                    espaciamiento=spacing,
+                    conductor=conductor,
+                    profundidad=h
+                )
+                
+                # Agregar varillas si están habilitadas
+                if usar_varillas:
+                    espaciado_x = ancho / (round(n_varillas**0.5) - 1)
+                    espaciado_y = largo / (round(n_varillas**0.5) - 1)
+                    for i in range(round(n_varillas**0.5)):
+                        for j in range(round(n_varillas**0.5)):
+                            x = i * espaciado_x
+                            y = j * espaciado_y
+                            malla.agregar_varilla(x, y, longitud_varilla, diametro_varilla/1000)
+                
+                # Guardar malla en estado de sesión
+                st.session_state.malla = malla
+                
+                # Calcular parámetros
+                I, R_des, sigma, rho, I_fault, L, area_efectiva, n_barras = calc_malla_tierra(
+                    I=I,
+                    R_des=0.5,  # valor típico
+                    sigma=1/resistividad,
+                    rho=resistividad,
+                    I_falla=I_falla,
+                    L=malla.calcular_longitud_total(),
+                    spacing=spacing,
+                    h=h,
+                    conductor=conductor
+                )
+                
+                # Mostrar resultados
+                st.success("Cálculos completados correctamente")
+                st.markdown("### Resultados del cálculo:")
+                col1, col2, col3 = st.columns(3)
+                
+                with col1:
+                    E_paso, E_paso_max = calcular_potencial_paso(I_falla, resistividad, ancho, malla.n_x, h)
+                    st.metric("Potencial de paso", f"{E_paso:.2f} V", f"Máx: {E_paso_max:.2f} V")
+                    if E_paso > E_paso_max:
+                        st.error("⚠️ Potencial de paso excede el límite seguro")
+                
+                with col2:
+                    E_contacto, E_contacto_max = calcular_potencial_contacto(I_falla, resistividad, ancho, malla.n_x, h)
+                    st.metric("Potencial de contacto", f"{E_contacto:.2f} V", f"Máx: {E_contacto_max:.2f} V")
+                    if E_contacto > E_contacto_max:
+                        st.error("⚠️ Potencial de contacto excede el límite seguro")
+                
+                with col3:
+                    R_malla = calcular_resistencia_malla(resistividad, ancho, malla.n_x, h)
+                    st.metric("Resistencia de malla", f"{R_malla:.2f} Ω")
+                    if R_malla > 5:  # valor típico máximo recomendado
+                        st.warning("⚠️ Resistencia de malla elevada")
+                
+            except Exception as e:
+                st.error(f"Error en el cálculo: {str(e)}")
+
     with tab3:
         st.subheader("Configuración de Capas del Suelo")
         col6, col7 = st.columns(2)
@@ -537,8 +609,7 @@ def run_app():
             
             capas.append(CapaSuelo(prof, res, desc))
             
-            if i > 0 and res < capas[i-1].resistividad * 0.5:
-                st.warning(f"⚠️ Gran diferencia de resistividad entre capas {i} y {i+1}")
+            if i > 0 and res < capas[i-1].resistividad * 0.5:                st.warning(f"⚠️ Gran diferencia de resistividad entre capas {i} y {i+1}")
     
     with tab4:
         st.subheader("Visualización y Reportes")
@@ -552,370 +623,236 @@ def run_app():
             with col8:
                 vista = st.radio(
                     "Tipo de visualización",
-                    ["Malla 3D", "Mapa de calor", "Perfil del suelo", "Potenciales"],
+                    ["Malla 3D Multicapa", "Mapa de calor", "Perfil del suelo", "Potenciales"],
                     help="Seleccione el tipo de visualización"
                 )
             
-            mostrar_varillas = st.checkbox(
-                "Mostrar varillas",
-                value=True,
-                help="Visualizar varillas en el modelo"
-            )
-            
-            mostrar_isolineas = st.checkbox(
-                "Mostrar isolíneas",
-                value=True,
-                help="Mostrar líneas de igual potencial"
-            )
-        
-        with col9:
-            escala = st.select_slider(
-                "Escala de colores",
-                options=["Lineal", "Logarítmica"],
-                value="Lineal",
-                help="Escala para el mapa de colores"
-            )
-            
-            if vista == "Potenciales":
-                tipo_potencial = st.radio(
-                    "Tipo de potencial",
-                    ["Paso", "Contacto", "Ambos"]
-                )
-    
-    with tab5:
-        st.subheader("Análisis Avanzado")
-        analisis_type = st.radio(
-            "Tipo de análisis",
-            ["Optimización automática", "Análisis económico", "Análisis de seguridad"]
-        )
-        
-        if analisis_type == "Optimización automática":
-            col10, col11 = st.columns(2)
-            
-            with col10:
-                area_min = st.number_input(
-                    "Área mínima (m²)",
-                    min_value=4.0,
-                    value=100.0,
-                    help="Área mínima de la malla"
+                mostrar_varillas = st.checkbox(
+                    "Mostrar varillas",
+                    value=True,
+                    help="Visualizar varillas en el modelo"
                 )
                 
-                R_max = st.number_input(
-                    "Resistencia máxima (Ω)",
-                    min_value=0.1,
-                    value=5.0,
-                    help="Resistencia máxima permitida"
-                )
-            
-            with col11:
-                area_max = st.number_input(
-                    "Área máxima (m²)",
-                    min_value=area_min + 1,
-                    value=1000.0,
-                    help="Área máxima de la malla"
+                mostrar_uniones = st.checkbox(
+                    "Mostrar uniones",
+                    value=True,
+                    help="Visualizar puntos de unión en el modelo"
                 )
                 
-                factor_seg = st.slider(
-                    "Factor de seguridad",
-                    min_value=1.0,
-                    max_value=2.0,
-                    value=st.session_state.factor_seg,
-                    step=0.1,
-                    help="Factor de seguridad adicional",
-                    key="factor_seg"  # Esto vinculará el slider directamente con session_state.factor_seg
-                )
-        
-        elif analisis_type == "Análisis económico":
-            años = st.slider(
-                "Período de análisis (años)",
-                min_value=10,
-                max_value=50,
-                value=30,
-                step=5,
-                help="Período para análisis económico"
-            )
-            
-            tasa_interes = st.slider(
-                "Tasa de interés anual (%)",
-                min_value=1.0,
-                max_value=15.0,
-                value=5.0,
-                step=0.5,
-                help="Tasa de interés para valor presente"
-            )
-            
-            incluir_mantenimiento = st.checkbox(
-                "Incluir costos de mantenimiento",
-                value=True,
-                help="Considerar costos de mantenimiento periódico"
-            )
-        
-        else:  # Análisis de seguridad
-            factor_temperatura = factor_temperatura_suelo(T_suelo)
-            st.write(f"Factor de corrección por temperatura: {factor_temperatura:.2f}")
-            
-            if st.session_state.malla:
-                E_paso, E_paso_max = calcular_potencial_paso(
-                    I_falla, resistividad, 
-                    ancho if tipo_malla == "Rectangular" else lado,
-                    int(ancho/spacing) + 1, h
+                tipo_union = st.selectbox(
+                    "Tipo de unión",
+                    ["Soldadura exotérmica", "Conectores mecánicos"],
+                    help="Tipo de unión entre conductores y varillas"
                 )
                 
-                E_contacto, E_contacto_max = calcular_potencial_contacto(
-                    I_falla, resistividad,
-                    ancho if tipo_malla == "Rectangular" else lado,
-                    int(ancho/spacing) + 1, h
-                )
-                
-                # Métricas de seguridad
-                col12, col13 = st.columns(2)
-                with col12:
-                    st.metric(
-                        "Potencial de paso",
-                        f"{E_paso:.1f} V",
-                        f"{E_paso_max - E_paso:.1f} V bajo límite",
-                        delta_color="normal" if E_paso < E_paso_max else "off"
-                    )
-                
-                with col13:
-                    st.metric(
-                        "Potencial de contacto",
-                        f"{E_contacto:.1f} V",
-                        f"{E_contacto_max - E_contacto:.1f} V bajo límite",
-                        delta_color="normal" if E_contacto < E_contacto_max else "off"
-                    )
+                # Agregar botón de visualización
+                if st.button("🌟 Generar Visualización", use_container_width=True):
+                    if not st.session_state.malla:
+                        st.error("Primero debe calcular la malla")
+                    else:
+                        with st.spinner("Generando visualización..."):
+                            try:
+                                if vista == "Malla 3D Multicapa":
+                                    # Crear capa para visualización 3D
+                                    capa_base = CapaSuelo(h + 0.3, resistividad, "Suelo natural")
+                                    capa_superficial = CapaSuelo(0.1, rho_s, "Capa superficial")
+                                    imagen = generar_vista_3d_multicapa(
+                                        st.session_state.malla,
+                                        [capa_superficial, capa_base],
+                                        mostrar_varillas=mostrar_varillas,
+                                        mostrar_uniones=mostrar_uniones,
+                                        tipo_union=tipo_union,
+                                        progress_callback=lambda p, m: st.text(f"{m} ({p*100:.0f}%)")
+                                    )
+                                    st.image(imagen)
+                                    
+                                elif vista == "Mapa de calor":
+                                    potenciales = calcular_potenciales_superficie(
+                                        st.session_state.malla,
+                                        I_falla,
+                                        resistividad
+                                    )
+                                    fig, ax = generar_mapa_calor(
+                                        I_falla,
+                                        resistividad,
+                                        st.session_state.malla,
+                                        potenciales
+                                    )
+                                    st.pyplot(fig)
+                                    
+                                elif vista == "Perfil del suelo":
+                                    fig, ax = generar_perfil_suelo(
+                                        st.session_state.malla,
+                                        resistividad,
+                                        h,
+                                        rho_s
+                                    )
+                                    st.pyplot(fig)
+                                    
+                                elif vista == "Potenciales":
+                                    # Calcular potenciales en puntos específicos
+                                    x = np.linspace(0, ancho, 50)
+                                    y = np.linspace(0, largo, 50)
+                                    X, Y = np.meshgrid(x, y)
+                                    V = np.zeros_like(X)
+                                    
+                                    for i in range(len(x)):
+                                        for j in range(len(y)):
+                                            V[j,i] = calcular_potencial_punto(x[i], y[j], st.session_state.malla, I_falla, resistividad)
+                                    
+                                    fig, ax = plt.subplots(figsize=(10, 8))
+                                    cs = ax.contour(X, Y, V, levels=20)
+                                    plt.colorbar(cs, ax=ax, label='Potencial (V)')
+                                    ax.set_xlabel('x (m)')
+                                    ax.set_ylabel('y (m)')
+                                    ax.set_title('Líneas equipotenciales')
+                                    st.pyplot(fig)
+                                    
+                            except Exception as e:
+                                st.error(f"Error al generar la visualización: {str(e)}")
+                                
+            with col9:
+                if st.session_state.malla and vista == "Malla 3D Multicapa":
+                    st.markdown("### Materiales Necesarios")
+                    materiales = calcular_materiales(st.session_state.malla, tipo_union)
+                    st.write(f"**Conductor horizontal:** {materiales['conductor_horizontal']} m")
+                    st.write(f"**Conductor vertical:** {materiales['conductor_vertical']} m")
+                    st.write(f"**Varillas:** {materiales['varillas']} unidades")
+                    st.write(f"**Uniones totales:** {materiales['uniones_conductores'] + materiales['uniones_varillas']}")
+                    if tipo_union == "Soldadura exotérmica":
+                        st.write(f"**Material de soldadura:** {materiales['material_union']} kg")
+                    else:
+                        st.write(f"**Conectores necesarios:** {materiales['uniones_conductores'] + materiales['uniones_varillas']} unidades")
                     
-                if E_paso > E_paso_max * 0.8 or E_contacto > E_contacto_max * 0.8:
-                    st.warning("""
-                    ⚠️ Potenciales cercanos a límites máximos. Considere:
-                    - Reducir el espaciamiento entre conductores
-                    - Aumentar el área de la malla
-                    - Agregar más varillas
-                    - Mejorar la resistividad superficial
-                    """)
-
-    # Botones de acción principales
-    col_action1, col_action2 = st.columns(2)
-    
-    with col_action1:
-        if st.button("Calcular y Validar", use_container_width=True):
-            try:
-                # Crear conductor según selección
-                if material_conductor == "Cobre":
-                    conductor = Conductor.get_conductor_cobre(diametro_conductor)
-                else:
-                    conductor = Conductor.get_conductor_acero(diametro_conductor)
-                
-                # Crear malla
-                malla = MallaTierra(
-                    ancho=ancho,
-                    largo=largo,
-                    espaciamiento=spacing,
-                    conductor=conductor,
-                    profundidad=h
-                )
-                
-                if usar_varillas:
-                    # Distribuir varillas uniformemente
-                    dx = ancho / (int(n_varillas**0.5) - 1)
-                    dy = largo / (int(n_varillas**0.5) - 1)
-                    
-                    for i in range(int(n_varillas**0.5)):
-                        for j in range(int(n_varillas**0.5)):
-                            malla.agregar_varilla(
-                                x=i*dx,
-                                y=j*dy,
-                                longitud=longitud_varilla,
-                                diametro=diametro_varilla
-                            )
-                
-                st.session_state.malla = malla
-                
-                # Realizar cálculos básicos
-                I, R_des, sigma, rho, I_falla, L, A, n_barras = calc_malla_tierra(
-                    I=I,
-                    R_des=5.0,  # Resistencia máxima típica
-                    sigma=1/resistividad,
-                    rho=resistividad,
-                    I_falla=I_falla,
-                    L=ancho,
-                    spacing=spacing,
-                    h=h,
-                    conductor=conductor
-                )
-                st.success("Cálculos realizados correctamente")
-                
-                # Guardar versión automáticamente después del cálculo
-                if st.session_state.proyecto_actual:
-                    version = st.session_state.proyecto_actual.guardar_version(
-                        f"Cálculo automático - {datetime.now().strftime('%d/%m/%Y %H:%M')}"
-                    )
-                    st.info(f"Versión {version.id} guardada automáticamente")
-            except ValidationError as e:
-                st.error(f"Error de validación: {str(e)}")
-            except Exception as e:
-                st.error(f"Error en el cálculo: {str(e)}")
-    
-    with col_action2:
-        if st.button("Generar Visualización", use_container_width=True):
+                    # Botón para generar recomendaciones                    if st.button("Ver recomendaciones de construcción"):
+                        with open("docs/recomendaciones_construccion.md", "r", encoding="utf-8") as f:
+                            recomendaciones = f.read()
+                        st.markdown(recomendaciones)
+        
+        with report_tab:
             if st.session_state.malla:
                 try:
-                    if vista == "Malla 3D":
-                        fig, ax = generate_malla_tierra(
-                            I, 5.0, 1/resistividad, resistividad,
-                            I_falla, ancho, ancho*largo, int(ancho/spacing) + 1
-                        )
-                        st.pyplot(fig)
-                    elif vista == "Mapa de calor":
-                        potenciales = calcular_potenciales_superficie(
+                    # Preparar datos para el reporte
+                    parametros = {
+                        "Corriente de falla": f"{I_falla} A",
+                        "Resistividad del suelo": f"{resistividad} Ω⋅m",
+                        "Dimensiones": f"{ancho}m x {largo}m",
+                        "Profundidad": f"{h} m",
+                        "Material conductor": material_conductor,
+                        "Número de varillas": str(n_varillas) if usar_varillas else "No usa",
+                        "Método de unión": metodo_union
+                    }
+                    
+                    E_paso, E_paso_max = calcular_potencial_paso(
+                        I_falla, resistividad, ancho, int(ancho/spacing) + 1, h
+                    )
+                    E_contacto, E_contacto_max = calcular_potencial_contacto(
+                        I_falla, resistividad, ancho, int(ancho/spacing) + 1, h
+                    )
+                    
+                    resultados = {
+                        "Potencial de paso": f"{E_paso:.2f} V",
+                        "Potencial de contacto": f"{E_contacto:.2f} V",
+                        "Resistencia de malla": "Pendiente de calcular",
+                        "Factor de seguridad": f"{st.session_state.factor_seg:.1f}"
+                    }
+
+                    # Generar imágenes temporales
+                    os.makedirs("reportes", exist_ok=True)
+                    imagenes = {}
+                    
+                    # Mapa de calor
+                    fig1, ax1 = generar_mapa_calor(
+                        I_falla,
+                        resistividad,
+                        st.session_state.malla,
+                        calcular_potenciales_superficie(
                             st.session_state.malla,
                             I_falla,
                             resistividad
                         )
-                        fig, ax = generar_mapa_calor(
-                            I_falla,
-                            resistividad,
-                            st.session_state.malla,
-                            potenciales
+                    )
+                    temp_path1 = os.path.join("reportes", f"temp_mapa_calor_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png")
+                    plt.savefig(temp_path1, format='png', dpi=300, bbox_inches='tight')
+                    plt.close(fig1)
+                    imagenes["Distribución de Potenciales"] = temp_path1
+
+                    # Perfil del suelo
+                    fig2, ax2 = generar_perfil_suelo(
+                        st.session_state.malla,
+                        resistividad,
+                        h,
+                        rho_s
+                    )
+                    temp_path2 = os.path.join("reportes", f"temp_perfil_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png")
+                    plt.savefig(temp_path2, format='png', dpi=300, bbox_inches='tight')
+                    plt.close(fig2)
+                    imagenes["Perfil del Suelo"] = temp_path2
+
+                    # Generar reporte markdown y mostrarlo
+                    reporte_md = generar_reporte_markdown(
+                        st.session_state.malla,
+                        parametros,
+                        resultados,
+                        imagenes
+                    )
+                    
+                    st.markdown(reporte_md)
+
+                    # Generar nombre único para el reporte
+                    fecha_hora = datetime.now().strftime('%Y%m%d_%H%M%S')
+                    
+                    # Botones de descarga
+                    col_md, col_pdf = st.columns(2)
+                    
+                    with col_md:
+                        nombre_md = f"reporte_malla_{fecha_hora}.md"
+                        st.download_button(
+                            label="📝 Descargar Reporte MD",
+                            data=reporte_md,
+                            file_name=nombre_md,
+                            mime="text/markdown",
+                            use_container_width=True
                         )
-                        st.pyplot(fig)
-                    elif vista == "Perfil del suelo":
-                        fig, ax = generar_perfil_suelo(
-                            st.session_state.malla,
-                            resistividad,
-                            h,
-                            rho_s
-                        )
-                        st.pyplot(fig)
+
+                    with col_pdf:
+                        nombre_pdf = f"reporte_malla_{fecha_hora}.pdf"
+                        try:
+                            ruta_pdf = generar_reporte_pdf(
+                                st.session_state.malla,
+                                parametros,
+                                resultados,
+                                nombre_pdf
+                            )
+                            
+                            if os.path.exists(ruta_pdf):
+                                with open(ruta_pdf, "rb") as pdf_file:
+                                    st.download_button(
+                                        label="📄 Descargar Reporte PDF",
+                                        data=pdf_file.read(),
+                                        file_name=nombre_pdf,
+                                        mime="application/pdf",
+                                        use_container_width=True
+                                    )
+                            else:
+                                st.error("Error: No se pudo generar el archivo PDF")
+                        except Exception as e:
+                            st.error(f"Error al generar el PDF: {str(e)}")
+
+                    # Limpiar archivos temporales
+                    try:
+                        for imagen in imagenes.values():
+                            if os.path.exists(imagen):
+                                os.remove(imagen)
+                    except Exception:
+                        pass
+                        
                 except Exception as e:
-                    st.error(f"Error en la visualización: {str(e)}")
+                    st.error(f"Error al generar el reporte: {str(e)}")
+                    import traceback
+                    st.error(traceback.format_exc())
             else:
                 st.warning("Primero debe calcular la malla")
-    
-    with report_tab:
-        if st.session_state.malla:
-            try:
-                # Preparar datos para el reporte
-                parametros = {
-                    "Corriente de falla": f"{I_falla} A",
-                    "Resistividad del suelo": f"{resistividad} Ω⋅m",
-                    "Dimensiones": f"{ancho}m x {largo}m",
-                    "Profundidad": f"{h} m",
-                    "Material conductor": material_conductor,
-                    "Número de varillas": str(n_varillas) if usar_varillas else "No usa",
-                    "Método de unión": metodo_union
-                }
-                
-                E_paso, E_paso_max = calcular_potencial_paso(
-                    I_falla, resistividad, ancho, int(ancho/spacing) + 1, h
-                )
-                E_contacto, E_contacto_max = calcular_potencial_contacto(
-                    I_falla, resistividad, ancho, int(ancho/spacing) + 1, h
-                )
-                
-                resultados = {
-                    "Potencial de paso": f"{E_paso:.2f} V",
-                    "Potencial de contacto": f"{E_contacto:.2f} V",
-                    "Resistencia de malla": "Pendiente de calcular",
-                    "Factor de seguridad": f"{st.session_state.factor_seg:.1f}"
-                }
-
-                # Generar imágenes temporales
-                os.makedirs("reportes", exist_ok=True)
-                imagenes = {}
-                
-                # Mapa de calor
-                fig1, ax1 = generar_mapa_calor(
-                    I_falla,
-                    resistividad,
-                    st.session_state.malla,
-                    calcular_potenciales_superficie(
-                        st.session_state.malla,
-                        I_falla,
-                        resistividad
-                    )
-                )
-                temp_path1 = os.path.join("reportes", f"temp_mapa_calor_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png")
-                plt.savefig(temp_path1, format='png', dpi=300, bbox_inches='tight')
-                plt.close(fig1)
-                imagenes["Distribución de Potenciales"] = temp_path1
-
-                # Perfil del suelo
-                fig2, ax2 = generar_perfil_suelo(
-                    st.session_state.malla,
-                    resistividad,
-                    h,
-                    rho_s
-                )
-                temp_path2 = os.path.join("reportes", f"temp_perfil_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png")
-                plt.savefig(temp_path2, format='png', dpi=300, bbox_inches='tight')
-                plt.close(fig2)
-                imagenes["Perfil del Suelo"] = temp_path2
-
-                # Generar reporte markdown y mostrarlo
-                reporte_md = generar_reporte_markdown(
-                    st.session_state.malla,
-                    parametros,
-                    resultados,
-                    imagenes
-                )
-                
-                st.markdown(reporte_md)
-
-                # Generar nombre único para el reporte
-                fecha_hora = datetime.now().strftime('%Y%m%d_%H%M%S')
-                
-                # Botones de descarga
-                col_md, col_pdf = st.columns(2)
-                
-                with col_md:
-                    nombre_md = f"reporte_malla_{fecha_hora}.md"
-                    st.download_button(
-                        label="📝 Descargar Reporte MD",
-                        data=reporte_md,
-                        file_name=nombre_md,
-                        mime="text/markdown",
-                        use_container_width=True
-                    )
-
-                with col_pdf:
-                    nombre_pdf = f"reporte_malla_{fecha_hora}.pdf"
-                    try:
-                        ruta_pdf = generar_reporte_pdf(
-                            st.session_state.malla,
-                            parametros,
-                            resultados,
-                            nombre_pdf
-                        )
-                        
-                        if os.path.exists(ruta_pdf):
-                            with open(ruta_pdf, "rb") as pdf_file:
-                                st.download_button(
-                                    label="📄 Descargar Reporte PDF",
-                                    data=pdf_file.read(),
-                                    file_name=nombre_pdf,
-                                    mime="application/pdf",
-                                    use_container_width=True
-                                )
-                        else:
-                            st.error("Error: No se pudo generar el archivo PDF")
-                    except Exception as e:
-                        st.error(f"Error al generar el PDF: {str(e)}")
-
-                # Limpiar archivos temporales
-                try:
-                    for imagen in imagenes.values():
-                        if os.path.exists(imagen):
-                            os.remove(imagen)
-                except Exception:
-                    pass
-                        
-            except Exception as e:
-                st.error(f"Error al generar el reporte: {str(e)}")
-                import traceback
-                st.error(traceback.format_exc())
-        else:
-            st.warning("Primero debe calcular la malla")
 
 
 if __name__ == "__main__":
