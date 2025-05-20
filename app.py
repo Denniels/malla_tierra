@@ -15,6 +15,10 @@ from analisis_avanzado import (
     AnalisisCostos,
     OptimizadorMalla
 )
+from visualizacion_v2 import (
+    visualizar_malla,
+    LimitesVisualizacion
+)
 from visualizacion import (
     generar_mapa_calor,
     generar_perfil_suelo,
@@ -656,15 +660,13 @@ def run_app():
                                     # Crear capa para visualización 3D
                                     capa_base = CapaSuelo(h + 0.3, resistividad, "Suelo natural")
                                     capa_superficial = CapaSuelo(0.1, rho_s, "Capa superficial")
-                                    imagen = generar_vista_3d_multicapa(
+                                    visualizar_malla(
                                         st.session_state.malla,
                                         [capa_superficial, capa_base],
                                         mostrar_varillas=mostrar_varillas,
                                         mostrar_uniones=mostrar_uniones,
-                                        tipo_union=tipo_union,
-                                        progress_callback=lambda p, m: st.text(f"{m} ({p*100:.0f}%)")
+                                        tipo_union=tipo_union
                                     )
-                                    st.image(imagen)
                                     
                                 elif vista == "Mapa de calor":
                                     potenciales = calcular_potenciales_superficie(
@@ -854,6 +856,125 @@ def run_app():
             else:
                 st.warning("Primero debe calcular la malla")
 
+    with tab5:
+        st.subheader("Análisis Avanzado")
+        col10, col11 = st.columns(2)
+        
+        with col10:
+            st.write("### Análisis de Costos")
+            if st.session_state.malla:
+                # Calcular costos estimados
+                materiales = calcular_materiales(st.session_state.malla, tipo_union)
+                costo_materiales = sum([
+                    materiales['conductor_horizontal'] * 10,  # Ejemplo: $10 por metro de conductor
+                    materiales['conductor_vertical'] * 15,    # Ejemplo: $15 por metro de conductor vertical
+                    materiales['varillas'] * 5,               # Ejemplo: $5 por varilla
+                    materiales['uniones_conductores'] * 2,   # Ejemplo: $2 por conector
+                    materiales['uniones_varillas'] * 3        # Ejemplo: $3 por conector de varilla
+                ])
+                
+                st.metric("Costo estimado de materiales", f"${costo_materiales:.2f}", delta=None)
+                
+                if st.button("Ver detalle de costos"):
+                    st.write("#### Detalle de costos")
+                    st.write(f"- Conductor horizontal ({materiales['conductor_horizontal']} m): ${materiales['conductor_horizontal'] * 10:.2f}")
+                    st.write(f"- Conductor vertical ({materiales['conductor_vertical']} m): ${materiales['conductor_vertical'] * 15:.2f}")
+                    st.write(f"- Varillas ({materiales['varillas']} unidades): ${materiales['varillas'] * 5:.2f}")
+                    st.write(f"- Uniones de conductores ({materiales['uniones_conductores']} unidades): ${materiales['uniones_conductores'] * 2:.2f}")
+                    st.write(f"- Uniones de varillas ({materiales['uniones_varillas']} unidades): ${materiales['uniones_varillas'] * 3:.2f}")
+            else:
+                st.warning("Calcule la malla primero para ver el análisis de costos")
+        
+        with col11:
+            st.write("### Optimización de la Malla")
+            if st.session_state.malla:
+                # Parámetros de optimización
+                eficiencia_objetivo = st.slider("Eficiencia objetivo (%)", 50, 100, 90)
+                costo_maximo = st.number_input("Costo máximo permitido", min_value=0.0, value=1000.0, step=10.0)
+                
+                if st.button("Optimizar malla"):
+                    with st.spinner("Optimizando..."):
+                        try:
+                            # Ejecutar optimización
+                            mejor_malla = OptimizadorMalla(
+                                malla_inicial=st.session_state.malla,
+                                eficiencia_objetivo=eficiencia_objetivo / 100,
+                                costo_maximo=costo_maximo
+                            ).optimizar()
+                            
+                            # Actualizar malla en estado de sesión
+                            st.session_state.malla = mejor_malla
+                            st.success("Optimización completada")
+                        except Exception as e:
+                            st.error(f"Error en la optimización: {str(e)}")
+            else:
+                st.warning("Calcule la malla primero para ver el análisis de costos")
+
+
+def pagina_visualizacion():
+    """Página de visualización de la malla"""
+    st.header("Visualización de la Malla")
+    
+    if 'malla' not in st.session_state:
+        st.warning("Primero configure los parámetros de la malla")
+        return
+        
+    col1, col2 = st.columns([3,1])
+    
+    with col2:
+        modo = st.selectbox('Modo de Visualización', 
+                          ['2D', '3D Simple', '3D Avanzada'],
+                          key='modo_viz')
+                          
+        estilo = st.selectbox('Estilo', 
+                           ['modern', 'technical', 'simple'],
+                           key='estilo_viz')
+                           
+        mostrar_medidas = st.checkbox('Mostrar Medidas', 
+                                   value=True,
+                                   key='mostrar_medidas')
+                                   
+        st.divider()
+        
+        if st.button("Generar PDF"):
+            try:
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                nombre_archivo = f"reporte_malla_{timestamp}.pdf"
+                ruta_pdf = os.path.join("reportes", nombre_archivo)
+                
+                # Generar reporte PDF con la visualización actual
+                generar_reporte_pdf(
+                    malla=st.session_state.malla,
+                    ruta_salida=ruta_pdf,
+                    modo_viz=modo.lower().replace(" ", "-"),
+                    estilo=estilo,
+                    mostrar_medidas=mostrar_medidas
+                )
+                
+                st.success(f"Reporte generado: {nombre_archivo}")
+                
+            except Exception as e:
+                st.error(f"Error al generar PDF: {str(e)}")
+    
+    with col1:
+        try:            # Mapear selección a modo interno
+            modo_map = {
+                '2D': '2d',
+                '3D Simple': '3d-simple',
+                '3D Avanzada': '3d-avanzada'
+            }
+            fig, ax = visualizar_malla(
+                st.session_state.malla,
+                modo=modo_map[modo],
+                mostrar_medidas=mostrar_medidas,
+                estilo=estilo,
+                mostrar_varillas=True
+            )
+            
+            st.pyplot(fig)
+            
+        except Exception as e:
+            st.error(f"Error en la visualización: {str(e)}")
 
 if __name__ == "__main__":
     run_app()

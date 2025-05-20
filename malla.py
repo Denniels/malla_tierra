@@ -55,8 +55,17 @@ class MallaTierra:
         espaciamiento: float,
         conductor: Optional[Conductor] = None,
         profundidad: float = 0.5,
-        varillas: Optional[List[Varilla]] = None
+        varillas: Optional[List[Varilla]] = None,
+        agregar_varillas_perimetro: bool = True
     ):
+        # Validar parámetros de entrada
+        if ancho <= 0 or largo <= 0:
+            raise ValueError("El ancho y largo de la malla deben ser positivos")
+        if espaciamiento <= 0:
+            raise ValueError("El espaciamiento debe ser positivo")
+        if profundidad <= 0:
+            raise ValueError("La profundidad debe ser positiva")
+            
         self.ancho = ancho
         self.largo = largo
         self.espaciamiento = espaciamiento
@@ -75,17 +84,129 @@ class MallaTierra:
         # Recalcular espaciamientos reales
         self.espaciamiento_x = ancho / (self.n_x - 1)
         self.espaciamiento_y = largo / (self.n_y - 1)
+        
+        # Agregar varillas en el perímetro si se solicita
+        if agregar_varillas_perimetro:
+            self._agregar_varillas_perimetro()
+            
+    def _agregar_varillas_perimetro(self):
+        """Agrega varillas en el perímetro de la malla para mejor disipación"""
+        # Esquinas
+        for x in [0, self.ancho]:
+            for y in [0, self.largo]:
+                self.agregar_varilla(x, y, longitud=3.0)  # Varillas más largas en las esquinas
+        
+        # Lados (cada 5 metros o menos)
+        spacing_varillas = min(5.0, self.ancho/4)
+        
+        # Lado inferior y superior
+        for x in np.arange(spacing_varillas, self.ancho-0.1, spacing_varillas):
+            self.agregar_varilla(x, 0)
+            self.agregar_varilla(x, self.largo)
+            
+        # Lado izquierdo y derecho
+        for y in np.arange(spacing_varillas, self.largo-0.1, spacing_varillas):
+            self.agregar_varilla(0, y)
+            self.agregar_varilla(self.ancho, y)
     
-    def agregar_varilla(self, x: float, y: float, longitud: float = 2.4, diametro: float = 16.0):
-        """Agrega una varilla vertical a la malla"""
-        varilla = Varilla(
-            posicion_x=x,
-            posicion_y=y,
-            diametro=diametro,
-            longitud=longitud
-        )
-        self.varillas.append(varilla)
+    def validar_posicion(self, x: float, y: float) -> bool:
+        """
+        Valida si una posición está dentro de los límites de la malla
+        y no interfiere con otras varillas
+        
+        Args:
+            x: Coordenada x de la posición a validar
+            y: Coordenada y de la posición a validar
+            
+        Returns:
+            bool: True si la posición es válida, False en caso contrario
+        """
+        # Verificar límites - incluir el perímetro (0 y dimensión máxima son válidos)
+        if x < 0 or x > self.ancho or y < 0 or y > self.largo:
+            return False
+            
+        # Si es una posición en el perímetro, siempre es válida
+        if x in (0, self.ancho) or y in (0, self.largo):
+            return True
+            
+        # Para posiciones interiores, verificar que coincida con los nodos de la malla
+        x_nodos = np.linspace(0, self.ancho, self.n_x)
+        y_nodos = np.linspace(0, self.largo, self.n_y)
+        
+        # Tolerancia para comparación de flotantes
+        tolerancia = 0.001
+        
+        # Verificar si la posición coincide con algún nodo
+        x_valida = any(abs(x - x_nodo) < tolerancia for x_nodo in x_nodos)
+        y_valida = any(abs(y - y_nodo) < tolerancia for y_nodo in y_nodos)
+        
+        if not (x_valida and y_valida):
+            return False
+        
+        # Verificar distancia mínima con otras varillas
+        for varilla in self.varillas:
+            dx = abs(varilla.posicion_x - x)
+            dy = abs(varilla.posicion_y - y)
+            if dx == 0 and dy == 0:  # Misma posición que una varilla existente
+                return False
+            if max(dx, dy) < self.espaciamiento * 0.5:  # distancia mínima
+                return False
+        
+        return True
     
+    def agregar_varilla(self, x_o_varilla, y=None, longitud=2.4, diametro=16.0):
+        """
+        Agrega una varilla vertical a la malla.
+        
+        Args:
+            x_o_varilla: Puede ser la coordenada x (float) o un objeto Varilla
+            y: Coordenada y (opcional si x_o_varilla es un objeto Varilla)
+            longitud: Longitud de la varilla en metros (opcional)
+            diametro: Diámetro de la varilla en mm (opcional)
+        """
+        if isinstance(x_o_varilla, Varilla):
+            varilla = x_o_varilla
+            if not self.validar_posicion(varilla.posicion_x, varilla.posicion_y):
+                raise ValueError(f"Posición inválida para la varilla: ({varilla.posicion_x}, {varilla.posicion_y})")
+            self.varillas.append(varilla)
+        else:
+            if y is None:
+                raise ValueError("Se debe proporcionar la coordenada y cuando x es un número")
+            if not self.validar_posicion(x_o_varilla, y):
+                raise ValueError(f"Posición inválida para la varilla: ({x_o_varilla}, {y})")
+            varilla = Varilla(
+                posicion_x=x_o_varilla,
+                posicion_y=y,
+                longitud=longitud,
+                diametro=diametro
+            )
+            self.varillas.append(varilla)
+            
+    def validar_configuracion(self) -> bool:
+        """
+        Valida la configuración completa de la malla
+        """
+        # Verificar dimensiones mínimas
+        if self.ancho < 3 or self.largo < 3:
+            return False
+            
+        # Verificar espaciamiento adecuado
+        if self.espaciamiento_x < 0.5 or self.espaciamiento_y < 0.5:
+            return False
+            
+        # Verificar profundidad
+        if self.profundidad < 0.3 or self.profundidad > 3:
+            return False
+            
+        # Verificar varillas
+        for varilla in self.varillas:
+            if not self.validar_posicion(varilla.posicion_x, varilla.posicion_y):
+                return False
+            if varilla.longitud < 1.5 or varilla.longitud > 6:
+                return False
+                
+        return True
+        
     def obtener_nodos(self) -> Tuple[np.ndarray, np.ndarray]:
         """Obtiene las coordenadas de todos los nodos de la malla"""
         x = np.linspace(0, self.ancho, self.n_x)

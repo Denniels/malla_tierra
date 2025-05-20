@@ -56,12 +56,39 @@ def calc_malla_tierra(I, R_des, sigma, rho, I_falla, L, spacing=0.5, h=0.5, cond
     margen = 1.0  # 1 metro de margen según IEEE-80
     A_efectiva = (malla.ancho + 2*margen) * (malla.largo + 2*margen)
     
-    # Calcular longitud total de conductores (horizontales y verticales)
+    # Calcular longitud total de conductores y el número de uniones
     L_total = malla.get_longitud_total_conductores()
+    n_uniones = malla.n_x * malla.n_y
     
-    # La resistencia equivalente se calcula considerando la longitud total de conductores
-    # y el área efectiva según IEEE-80 sección 14.3
-    R_equiv = rho * (1/L_total + 1/np.sqrt(20*A_efectiva) * (1 + 1/(1 + h * np.sqrt(20/A_efectiva))))
+    # Factor de corrección por conductores paralelos mejorado
+    alpha = 2 * h / np.sqrt(A_efectiva)
+    beta = malla.espaciamiento / np.sqrt(A_efectiva)
+    K_g = 0.656 + 0.172 * (malla.n_x + malla.n_y)  # Factor de geometría de malla
+    factor_paralelo = K_g * (1 + (n_uniones / L_total) * (1 - np.exp(-alpha/beta)))
+    
+    # Factor de corrección por varillas verticales mejorado
+    factor_varillas = 1.0
+    if malla.varillas:
+        n_varillas = len(malla.varillas)
+        L_varillas = sum(v.longitud for v in malla.varillas)
+        profundidad_media = np.mean([v.longitud for v in malla.varillas])
+        
+        # Factor que considera la distribución de varillas
+        K_r = 1.0
+        if n_varillas >= 4:  # Si hay al menos varillas en las esquinas
+            K_r = 1.15  # Mejora por distribución en perímetro
+            
+        factor_varillas = 1.0 + K_r * (L_varillas / L_total) * (1.0 + profundidad_media/np.sqrt(A_efectiva))
+    
+    # Factor de utilización del área
+    K_s = 1 / (1 + 0.1 * (A_efectiva/L_total/h)**0.5)
+    
+    # La resistencia equivalente se calcula según IEEE-80 con factores de corrección
+    R_equiv = (rho / (factor_varillas * factor_paralelo * K_s)) * (
+        1/L_total + 
+        1/np.sqrt(20*A_efectiva) * 
+        (1 + 1/(1 + h * np.sqrt(20/A_efectiva)))
+    )
     
     # Validar que la resistencia equivalente cumpla con el criterio de diseño
     if R_equiv > R_des:
