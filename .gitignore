@@ -29,6 +29,10 @@ ENV/
 
 # Backup files
 *.bak
+*.temp
+*_temp.py
+prueba_*.py
+tatus
 
 # Generated files
 reportes/
