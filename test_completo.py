@@ -51,9 +51,16 @@ class TestMallaTierra(unittest.TestCase):
             'sigma': 0.01,
             'rho': 100,
             'I_falla': 1000,
-            'L': 2,
-            'spacing': 0.5,
-            'h': 0.5
+            'L': 30,  # Aumentado a 30m para mayor área
+            'spacing': 1.5,  # Reducido a 1.5m para más conductores
+            'h': 0.8,  # Se mantiene en 0.8m
+            'conductor': Conductor(
+                diametro=16.0,  # Aumentado a 16mm
+                material="Cobre",
+                resistividad=1.72e-8,
+                capacidad_corriente=200,
+                temperatura_max=200
+            )
         }
     
     def test_01_validaciones_basicas(self):

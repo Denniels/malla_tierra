@@ -1,7 +1,7 @@
 # 📊 Resumen de Pruebas
 
 ## Estadísticas Generales
-- **Fecha de ejecución**: 2025-05-17 18:52:45
+- **Fecha de ejecución**: 2025-05-20 09:10:47
 - **Total de pruebas**: 6
 - **Tipos de pruebas**:
   - Validaciones básicas
@@ -36,16 +36,18 @@
 ---
 
 # Informe de Pruebas - Malla de Tierra
-Fecha: 2025-05-17 18:52:43
+Fecha: 2025-05-20 09:10:45
 
 ## 1. Pruebas de Validaciones Básicas
-❌ Error en validaciones básicas: La resistencia equivalente (2.08 Ω) supera la resistencia deseada (0.5 Ω)
+✅ Validaciones básicas correctas
+- Área calculada: 1024.00 m²
+- Número de barras: 21
 
 ## 2. Pruebas de Cálculos de Potenciales
-- Potencial de paso: -4331.65 V
-- Potencial de paso máximo: 2881.24 V
-- Potencial de contacto: -4058.33 V
-- Potencial de contacto máximo: 843.35 V
+- Potencial de paso: 475.74 V
+- Potencial de paso máximo: 2964.91 V
+- Potencial de contacto: 2014.01 V
+- Potencial de contacto máximo: 864.27 V
 ✅ Cálculos de potenciales correctos
 
 ## 3. Pruebas de Flexibilidad en el Diseño
@@ -76,14 +78,55 @@ Fecha: 2025-05-17 18:52:43
 ## 6. Pruebas de Análisis de Costos y Comparaciones
 ### Test 1: Costos Iniciales
 Malla de Cobre:
-- Conductores: $500.00
-- Varillas: $0.00
-- Soldaduras: $250.00
+- Conductores: $2736.00
+- Varillas: $560.00
+- Soldaduras: $410.00
 - Tratamiento: $6.00
 
 Malla de Acero:
-- Conductores: $300.00
-- Varillas: $0.00
-- Soldaduras: $250.00
+- Conductores: $912.00
+- Varillas: $560.00
+- Soldaduras: $410.00
 - Tratamiento: $6.00
-❌ Error en pruebas de análisis de costos: 'AnalisisCostos' object has no attribute 'calcular_costo_vida_util'
+
+### Test 2: Análisis a 30 años
+Malla de Cobre:
+- Conductores: $2736.00
+- Varillas: $560.00
+- Soldaduras: $451.00
+- Tratamiento: $7.80
+- Conductores_Mantenimiento: $420.59
+- Varillas_Mantenimiento: $43.04
+- Soldaduras_Mantenimiento: $138.66
+- Tratamiento_Mantenimiento: $3.60
+- Tratamiento_Reemplazo_1: $7.80
+- Tratamiento_Reemplazo_2: $7.80
+
+Malla de Acero:
+- Conductores: $1094.40
+- Varillas: $560.00
+- Soldaduras: $451.00
+- Tratamiento: $7.80
+- Conductores_Mantenimiento: $252.35
+- Conductores_Reemplazo_1: $676.67
+- Varillas_Mantenimiento: $43.04
+- Soldaduras_Mantenimiento: $138.66
+- Tratamiento_Mantenimiento: $3.60
+- Tratamiento_Reemplazo_1: $7.80
+- Tratamiento_Reemplazo_2: $7.80
+
+### Test 3: Análisis de Sensibilidad
+
+Comparación por periodo:
+| Años | Cobre ($) | Acero ($) | Diferencia ($) |
+|------|-----------|-----------|----------------|
+| 10 | 4059.14 | 2333.04 | 1726.11 |
+| 20 | 4253.79 | 2475.80 | 1777.99 |
+| 30 | 4376.29 | 3243.12 | 1133.17 |
+| 40 | 5944.37 | 3644.97 | 2299.40 |
+
+### Test 4: Análisis de Costo-Efectividad
+- Costo por metro (Cobre): $71.98/m
+- Costo por metro (Acero): $53.34/m
+
+✅ Pruebas de análisis de costos correctas

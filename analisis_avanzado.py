@@ -93,7 +93,7 @@ class AnalisisCostos:
         self.materiales = {
             "Cobre": MaterialCosto(
                 nombre="Conductor de cobre",
-                costo_unitario=25.0,  # USD/m
+                costo_unitario=45.0,  # USD/m - Actualizado a precio de mercado
                 vida_util=30,
                 tasa_degradacion=0.02,  # 2% anual
                 costo_mantenimiento=0.01,  # 1% anual
@@ -101,7 +101,7 @@ class AnalisisCostos:
             ),
             "Acero": MaterialCosto(
                 nombre="Conductor de acero galvanizado",
-                costo_unitario=15.0,  # USD/m
+                costo_unitario=15.0,  # USD/m - Se mantiene
                 vida_util=25,
                 tasa_degradacion=0.03,  # 3% anual
                 costo_mantenimiento=0.015,  # 1.5% anual
@@ -109,7 +109,7 @@ class AnalisisCostos:
             ),
             "Varilla": MaterialCosto(
                 nombre="Varilla de cobre",
-                costo_unitario=30.0,  # USD/unidad
+                costo_unitario=35.0,  # USD/unidad - Actualizado
                 vida_util=30,
                 tasa_degradacion=0.015,  # 1.5% anual
                 costo_mantenimiento=0.005,  # 0.5% anual
@@ -172,8 +172,16 @@ class AnalisisCostos:
         costos_totales = {k: v for k, v in costos_iniciales.items()}
         material = "Cobre" if malla.conductor.material == "Cobre" else "Acero"
         
+        # Mapeo de nombres de elementos a materiales
+        mapeo_materiales = {
+            "Conductores": material,
+            "Varillas": "Varilla",
+            "Soldaduras": "Soldadura",
+            "Tratamiento": "Tratamiento"
+        }
+        
         for item, costo_inicial in costos_iniciales.items():
-            material_info = self.materiales[item if item != "Conductores" else material]
+            material_info = self.materiales[mapeo_materiales[item]]
             
             # Factor de valor presente para anualidades
             factor_vp = (1 - (1 + tasa_interes)**-años) / tasa_interes
